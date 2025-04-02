@@ -17,7 +17,6 @@ dependencies = [
     "torch~=2.6.0",
     "tqdm>=4.67.1",
     "wandb>=0.19.7",
-    "ipdb>=0.13.13",
 ]
 
 
