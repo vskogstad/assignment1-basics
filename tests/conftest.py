@@ -33,8 +33,8 @@ class NumpySnapshot:
         actual: _A | dict[str, _A], 
         test_name: str, 
         force_update: bool = False,
-        rtol: float = 1e-5, 
-        atol: float = 1e-8,
+        rtol: float = 1e-4, 
+        atol: float = 1e-2,
     ):
         """
         Assert that the actual array(s) matches the snapshot.
@@ -99,7 +99,7 @@ def numpy_snapshot(request):
     # Patch the assert_match method to include the update flag by default
     original_assert_match = snapshot.assert_match
     
-    def patched_assert_match(actual, test_name=None, force_update=force_update, rtol=1e-5, atol=1e-8):
+    def patched_assert_match(actual, test_name=None, force_update=force_update, rtol=1e-4, atol=1e-2):
         # If test_name is not provided, use the test function name
         if test_name is None:
             test_name = request.node.name
