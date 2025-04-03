@@ -11,6 +11,50 @@ from torch import Tensor
 
 
 
+def run_linear(
+    d_in: int,
+    d_out: int,
+    weights: Float[Tensor, " d_out d_in"],
+    in_features: Float[Tensor, " ... d_in"],
+) -> Float[Tensor, " ... d_out"]:
+    """
+    Given the weights of a Linear layer, compute the transformation of a batched input.
+
+    Args:
+        in_dim (int): The size of the input dimension
+        out_dim (int): The size of the output dimension
+        weights (Float[Tensor, "d_out d_in"]): The linear weights to use
+        in_features (Float[Tensor, "... d_out"]): The output tensor to apply the function to
+    
+    Returns:
+        Float[Tensor, "... d_out"]: The transformed output of your linear module.
+    """
+
+    raise NotImplementedError
+
+
+def run_embedding(
+    vocab_size: int,
+    d_model: int,
+    weights: Float[Tensor, " vocab_size d_model"],
+    token_ids: Int[Tensor, " ..."],
+) -> Float[Tensor, " ... d_model"]:
+    """
+    Given the weights of an Embedding layer, get the embeddings for a batch of token ids.
+
+    Args:
+        vocab_size (int): The number of embeddings in the vocabulary
+        d_model (int): The size of the embedding dimension
+        weights (Float[Tensor, "vocab_size d_model"]): The embedding vectors to fetch from
+        token_ids (Int[Tensor, "..."]): The set of token ids to fetch from the Embedding layer
+    
+    Returns:
+        Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
+    """
+
+    raise NotImplementedError
+
+
 def run_swiglu(
     d_model: int,
     d_ff: int,
@@ -227,8 +271,8 @@ def run_transformer_block(
             Tensor to run your implementation on.
 
     Returns:
-        Tensor of shape (batch_size, sequence_length, d_model) with the output of
-        running the Transformer block on the input features.
+        Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
+        running the Transformer block on the input features while using RoPE.
     """
     raise NotImplementedError
 

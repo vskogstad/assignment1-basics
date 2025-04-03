@@ -2,6 +2,13 @@
 
 All changes we make to the assignment code or PDF will be documented in this file.
 
+## [1.0.2] - 2025-04-03
+### Added
+- code: Missing tests for Linear and Embedding
+
+### Changed
+- handout: Fix docstring for RMSNorm
+
 ## [1.0.1] - 2025-04-02
 ### Changed
 - code: Add some tolerance to RoPE tests
