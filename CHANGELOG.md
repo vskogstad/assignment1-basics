@@ -2,6 +2,12 @@
 
 All changes we make to the assignment code or PDF will be documented in this file.
 
+## [1.0.1] - 2025-04-02
+### Changed
+- code: Add some tolerance to RoPE tests
+- code: Make sure loading happens on CPU for tests
+- code: Fix docstring typing for readability of Tensor annotations in VSCode (pls fix, @Microsoft)
+
 ## [1.0.0] - 2025-04-01
 
 ### Added

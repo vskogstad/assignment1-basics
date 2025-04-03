@@ -3,13 +3,13 @@ import pytest
 import os
 from pathlib import Path
 import torch
+from torch import Tensor
 
 
-
-_A = np.ndarray | torch.Tensor
+_A = np.ndarray | Tensor
 
 def _canonicalize_array(arr: _A) -> np.ndarray:
-    if isinstance(arr, torch.Tensor):
+    if isinstance(arr, Tensor):
         arr = arr.detach().cpu().numpy()
     return arr
 
@@ -90,6 +90,8 @@ def numpy_snapshot(request):
             numpy_snapshot.assert_match(result, "my_test_name")
     """
     force_update = False
+
+    match_exact = request.config.getoption("--snapshot-exact", default=False)
     
     # Create the snapshot handler with default settings
     snapshot = NumpySnapshot()
@@ -101,6 +103,8 @@ def numpy_snapshot(request):
         # If test_name is not provided, use the test function name
         if test_name is None:
             test_name = request.node.name
+        if match_exact:
+            rtol = atol = 0
         return original_assert_match(actual, test_name=test_name, force_update=force_update, rtol=rtol, atol=atol)
     
     snapshot.assert_match = patched_assert_match
@@ -112,7 +116,7 @@ def numpy_snapshot(request):
 def ts_state_dict(request):
     from .common import FIXTURES_PATH
     import json
-    state_dict = torch.load(FIXTURES_PATH / "ts_tests" / "model.pt")
+    state_dict = torch.load(FIXTURES_PATH / "ts_tests" / "model.pt", map_location="cpu")
     config = json.load(open(FIXTURES_PATH / "ts_tests" / "model_config.json"))
     state_dict = {
         k.replace('_orig_mod.', ''): v for k, v in state_dict.items()

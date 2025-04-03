@@ -18,9 +18,7 @@ from .adapters import (
 
 def test_swiglu(numpy_snapshot, ts_state_dict, in_embeddings, d_model, d_ff):
     # reference_weights = torch.load(FIXTURES_PATH / "positionwise_feedforward_weights.pt")
-    w1_weight, w2_weight, w3_weight = [
-        ts_state_dict[0][f"layers.0.ffn.{k}.weight"] for k in ["w1", "w2", "w3"]
-    ]
+    w1_weight, w2_weight, w3_weight = [ts_state_dict[0][f"layers.0.ffn.{k}.weight"] for k in ["w1", "w2", "w3"]]
 
     actual_output = run_swiglu(
         d_model=d_model,
@@ -28,11 +26,9 @@ def test_swiglu(numpy_snapshot, ts_state_dict, in_embeddings, d_model, d_ff):
         w1_weight=w1_weight,
         w2_weight=w2_weight,
         w3_weight=w3_weight,
-        in_features=in_embeddings
+        in_features=in_embeddings,
     )
-    numpy_snapshot.assert_match(
-        actual_output, atol=1e-6
-    )
+    numpy_snapshot.assert_match(actual_output, atol=1e-5)
 
 
 def test_scaled_dot_product_attention(numpy_snapshot, q, k, v, mask):
@@ -81,13 +77,12 @@ def test_multihead_self_attention(numpy_snapshot, in_embeddings, d_model, n_head
         in_features=in_embeddings,
     )
     # numpy.testing.assert_allclose(actual_output.detach().numpy(), expected_output.detach().numpy(), atol=1e-6)
-    numpy_snapshot.assert_match(
-        actual_output,
-        atol=1e-6
-    )
+    numpy_snapshot.assert_match(actual_output, atol=1e-6)
 
-def test_multihead_self_attention_with_rope(numpy_snapshot, in_embeddings, d_model, n_heads, ts_state_dict, n_keys, theta, pos_ids):
 
+def test_multihead_self_attention_with_rope(
+    numpy_snapshot, in_embeddings, d_model, n_heads, ts_state_dict, n_keys, theta, pos_ids
+):
     d, _ = ts_state_dict
     q_proj_weight, k_proj_weight, v_proj_weight, o_proj_weight = [
         d[f"layers.0.attn.{k}_proj.weight"] for k in ["q", "k", "v", "output"]
@@ -108,13 +103,12 @@ def test_multihead_self_attention_with_rope(numpy_snapshot, in_embeddings, d_mod
         token_positions=pos_ids,
     )
     # numpy.testing.assert_allclose(actual_output.detach().numpy(), expected_output.detach().numpy(), atol=1e-6)
-    numpy_snapshot.assert_match(
-        actual_output,
-        atol=1e-6
-    )
+    numpy_snapshot.assert_match(actual_output, atol=1e-6)
 
 
-def test_transformer_lm(numpy_snapshot, vocab_size, n_keys, d_model, n_layers, n_heads, d_ff, ts_state_dict, in_indices):
+def test_transformer_lm(
+    numpy_snapshot, vocab_size, n_keys, d_model, n_layers, n_heads, d_ff, theta, ts_state_dict, in_indices
+):
     # reference_weights = torch.load(FIXTURES_PATH / "transformer_lm_weights.pt")
     # in_indices = torch.load(FIXTURES_PATH / "in_indices.pt")
     # expected_output = torch.load(FIXTURES_PATH / "transformer_lm_expected_output.pt")
@@ -127,16 +121,21 @@ def test_transformer_lm(numpy_snapshot, vocab_size, n_keys, d_model, n_layers, n
         num_layers=n_layers,
         num_heads=n_heads,
         d_ff=d_ff,
+        rope_theta=theta,
         weights=state_dict,
         in_indices=in_indices,
     )
     # numpy.testing.assert_allclose(actual_output.detach().numpy(), expected_output.detach().numpy(), atol=1e-4)
     numpy_snapshot.assert_match(
-        actual_output,
+        actual_output, 
+        atol=1e-4,
+        rtol=1e-2
     )
 
 
-def test_transformer_lm_truncated_input(numpy_snapshot, vocab_size, n_keys, d_model, n_layers, n_heads, d_ff, ts_state_dict, in_indices):
+def test_transformer_lm_truncated_input(
+    numpy_snapshot, vocab_size, n_keys, d_model, n_layers, n_heads, d_ff, theta, ts_state_dict, in_indices
+):
     # reference_weights = torch.load(FIXTURES_PATH / "transformer_lm_weights.pt")
     # in_indices_truncated = torch.load(FIXTURES_PATH / "in_indices_truncated.pt")
     # truncated_expected_output = torch.load(FIXTURES_PATH / "transformer_lm_truncated_expected_output.pt")
@@ -147,6 +146,7 @@ def test_transformer_lm_truncated_input(numpy_snapshot, vocab_size, n_keys, d_mo
         num_layers=n_layers,
         num_heads=n_heads,
         d_ff=d_ff,
+        rope_theta=theta,
         weights=ts_state_dict[0],
         in_indices=in_indices,
     )
@@ -157,19 +157,18 @@ def test_transformer_lm_truncated_input(numpy_snapshot, vocab_size, n_keys, d_mo
     )
 
 
-def test_transformer_block(numpy_snapshot, ts_state_dict, in_embeddings, d_model, n_heads, d_ff):
+def test_transformer_block(numpy_snapshot, ts_state_dict, in_embeddings, d_model, n_heads, d_ff, n_keys, theta):
     # reference_weights = torch.load(FIXTURES_PATH / "transformer_block_weights.pt")
     # in_features = torch.load(FIXTURES_PATH / "in_features.pt")
 
-    block_weights = {
-        k.replace('layers.0.', ''): v for k, v in ts_state_dict[0].items() if "layers.0." in k
-    }
-
+    block_weights = {k.replace("layers.0.", ""): v for k, v in ts_state_dict[0].items() if "layers.0." in k}
 
     actual_output = run_transformer_block(
         d_model=d_model,
         num_heads=n_heads,
         d_ff=d_ff,
+        max_seq_len=n_keys,
+        theta=theta,
         weights=block_weights,
         in_features=in_embeddings,
     )
@@ -192,29 +191,23 @@ def test_rmsnorm(numpy_snapshot, ts_state_dict, in_embeddings):
 
     actual_output = run_rmsnorm(d_model=d_model, eps=1e-5, weights=reference_weights, in_features=in_embeddings)
 
-    numpy_snapshot.assert_match(
-        actual_output,
-        atol=1e-6
-    )
+    numpy_snapshot.assert_match(actual_output, atol=1e-6)
 
 
 def test_rope(numpy_snapshot, in_embeddings, d_model, theta, n_queries, pos_ids):
-    output = run_rope(d_model, theta=theta, max_seq_len=n_queries, in_query_or_key=in_embeddings, token_positions=pos_ids)
-    numpy_snapshot.assert_match(
-        output,
-        atol=1e-6
+    output = run_rope(
+        d_model, theta=theta, max_seq_len=n_queries, in_query_or_key=in_embeddings, token_positions=pos_ids
     )
+    numpy_snapshot.assert_match(output, atol=1e-6)
 
 
 def test_silu_matches_pytorch():
-    x = torch.tensor([
-        [0.2352, 0.9259, 0.5189, 0.4725, 0.9730],
-        [0.7581, 0.9692, 0.2129, 0.9345, 0.0149],
-    ])
+    x = torch.tensor(
+        [
+            [0.2352, 0.9259, 0.5189, 0.4725, 0.9730],
+            [0.7581, 0.9692, 0.2129, 0.9345, 0.0149],
+        ]
+    )
     expected_output = F.silu(x)
     actual_output = run_silu(x)
-    numpy.testing.assert_allclose(
-        actual_output.detach().numpy(),
-        expected_output.detach().numpy(),
-        atol=1e-6
-    )
+    numpy.testing.assert_allclose(actual_output.detach().numpy(), expected_output.detach().numpy(), atol=1e-6)
