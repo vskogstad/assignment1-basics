@@ -7,16 +7,15 @@ All changes we make to the assignment code or PDF will be documented in this fil
 - code: Missing tests for Linear and Embedding
 
 ### Changed
-- handout: Fix docstring for RMSNorm
+- handout: Fix RMSNorm interface
+- handout: Add hints in RMSNorm and SwiGLU specifications to improve numerical stability
+- handout: Clarify the BPE stylized example uses naive pretokenization by splitting on whitespace; your implementations should still use the provided regex
 
 ## [1.0.1] - 2025-04-02
 ### Changed
 - code: Add some tolerance to RoPE tests
 - code: Make sure loading happens on CPU for tests
 - code: Fix docstring typing for readability of Tensor annotations in VSCode (pls fix, @Microsoft)
-- handout: Fix RMSNorm interface
-- handout: Add hints in RMSNorm and SwiGLU specifications to improve numerical stability
-- handout: Clarify the BPE stylized example uses naive pretokenization by splitting on whitespace; your implementations should still use the provided regex
 
 ## [1.0.0] - 2025-04-01
 
