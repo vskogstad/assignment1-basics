@@ -2,6 +2,10 @@
 
 All changes we make to the assignment code or PDF will be documented in this file.
 
+## [1.0.3] - 2025-04-07
+### Fixed
+- handout: fixed off-by-one error in RoPE description
+
 ## [1.0.2] - 2025-04-03
 ### Added
 - code: Missing tests for Linear and Embedding
