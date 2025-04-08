@@ -62,7 +62,7 @@ def test_train_bpe():
     assert set(vocab.values()) == set(reference_vocab.values())
 
 
-def test_train_bpe_special_tokens():
+def test_train_bpe_special_tokens(snapshot):
     """
     Ensure that the special tokens are added to the vocabulary and not
     merged with other tokens.
@@ -78,3 +78,10 @@ def test_train_bpe_special_tokens():
     vocabs_without_specials = [word for word in vocab.values() if word != b"<|endoftext|>"]
     for word_bytes in vocabs_without_specials:
         assert b"<|" not in word_bytes
+
+    snapshot.assert_match(
+        {
+            "vocab": vocab,
+            "merges": merges,
+        },
+    )
