@@ -8,6 +8,7 @@ All changes we make to the assignment code or PDF will be documented in this fil
 - handout: add guidance on removing special tokens before pretokenization (you should split on them!)
 
 ### Changed
+- handout: clarify that .encode() should not perform merges across pre-tokens
 - handout: fix command for compiling model on MPS backend
 
 ## [1.0.3] - 2025-04-07
