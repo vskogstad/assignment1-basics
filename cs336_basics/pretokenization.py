@@ -70,12 +70,14 @@ def pretokenize_file(filepath: str, num_processes: int, special_tokens: list[str
             f.seek(start)
             chunk = f.read(end - start).decode("utf-8", errors="ignore")
             # Remove special tokens in chunk.
-            split_special = "".join(re.split(SPECIAL, chunk))
+            split_special = re.split(SPECIAL, chunk)
             #print(split_special)
 
             # Run pre-tokenization on your chunk and store the counts for each pre-token
-
-            split_text = re.findall(PAT, split_special) #"some text that i'll pre-tokenize")
+            # Bad, but try passing test first
+            split_text = []
+            for document in split_special:
+                split_text.extend(re.findall(PAT, document)) #"some text that i'll pre-tokenize")
             
             for word in split_text:
                 counts[tuple(word.encode())] = counts.get(tuple(word.encode()), 0) + 1
