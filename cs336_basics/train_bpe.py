@@ -1,19 +1,17 @@
 import cProfile
 import pstats
+from typing import BinaryIO
 
-import regex as re  # supports negative look-ahead
+from cs336_basics.pretokenization import (find_chunk_boundaries,
+                                          pretokenize_file)
 
 
-def pre_tokenize(file_path):
-    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-    with open(file_path) as f:
-        text = f.read()
-    split_text = re.findall(PAT, text) #"some text that i'll pre-tokenize")
-    counts = dict()
-    for word in split_text:
-        counts[tuple(word)] = counts.get(tuple(word), 0) + 1
-    print(counts)
-    return counts
+def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+    num_merges = vocab_size - 256
+    counts = pretokenize_file(filepath=input_path, num_processes=4)
+    candidates = find_merge_candidates(counts)
+
+    return merge_pairs(candidates, num_merges=num_merges, counts=counts)
 
 def find_merge_candidates(counts):
     # look through all dict antries, find pairs and add to new dict.
@@ -30,14 +28,17 @@ def find_merge_candidates(counts):
 def merge_pairs(candidates, num_merges, counts):
     # merge num_merges most common pairs
     merges = []
-    for _ in range(num_merges):
+    vocab = {}
+    for i in range(num_merges):
         new_merge = candidates[0][0]
+        token_id = 256+i
+        vocab[token_id] = new_merge  # need to return a byte mapping here
         merges.append(new_merge)
         counts = update_counts(counts, new_merge)
         candidates = find_merge_candidates(counts) # first thing to improve. need to combine this and previous step.
         print(new_merge)
 
-    return merges
+    return vocab, merges
 
 def update_counts(counts, new_merge):
     new_token = "".join(new_merge)
@@ -70,17 +71,18 @@ def update_counts(counts, new_merge):
 
     return new_counts
 
-if __name__ == '__main__':
+
+
+
+
+if __name__ == "__main__":
+    
     with cProfile.Profile() as profile:
-        num_merges = 15
-        file = "data/minimal.txt"
-        counts = pre_tokenize(file_path=file)
-        candidates = find_merge_candidates(counts)
-        merges = merge_pairs(candidates, num_merges=num_merges, counts=counts)
-        print(merges)
+        vocab, merges = train_bpe(input_path="data/TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
+
         result = pstats.Stats(profile)
         result.sort_stats(pstats.SortKey.TIME)
         result.print_stats(10)
 
 
-
+    print(f"{len(vocab)=}, {vocab.items()=}, {merges[0]}")
