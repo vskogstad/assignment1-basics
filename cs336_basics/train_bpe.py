@@ -7,12 +7,14 @@ from cs336_basics.pretokenization import (find_chunk_boundaries,
 
 
 def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    num_merges = vocab_size - 256
+    num_merges = vocab_size - 256 - len(special_tokens)
     vocab = {i:bytes([i]) for i in range(256)}
+    vocab.update({256+i:token.encode("utf-8") for i, token in enumerate(special_tokens)})
+
     counts = pretokenize_file(filepath=input_path, num_processes=4, special_tokens=special_tokens)
     candidates = find_merge_candidates(counts, vocab)
 
-    return merge_pairs(candidates, num_merges=num_merges, counts=counts)
+    return merge_pairs(candidates, num_merges=num_merges, counts=counts, vocab=vocab)
 
 def find_merge_candidates(counts, vocab):
     # look through all dict antries, find pairs and add to new dict.
@@ -28,12 +30,11 @@ def find_merge_candidates(counts, vocab):
     #print(merge_candidates)
     return merge_candidates
 
-def merge_pairs(candidates, num_merges, counts):
+def merge_pairs(candidates, num_merges, counts, vocab):
     # merge num_merges most common pairs
     merges = []
-    vocab = {i:bytes([i]) for i in range(256)}
-    for i in range(num_merges):
-        token_id = 256 + i
+    token_id = len(vocab)
+    for _ in range(num_merges):
         best_pair = candidates[0][0] 
 
         token_a, token_b = best_pair
@@ -47,7 +48,8 @@ def merge_pairs(candidates, num_merges, counts):
         #print(counts)
         candidates = find_merge_candidates(counts, vocab) # first thing to improve. need to combine this and previous step.
         #print(new_merge)
-        assert(len())
+        token_id += 1
+
     return vocab, merges
 
 def update_counts(counts, new_merge, token_id):
