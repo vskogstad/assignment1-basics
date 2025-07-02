@@ -17,12 +17,14 @@ def find_merge_candidates(counts):
     # look through all dict antries, find pairs and add to new dict.
     merge_candidates = {}
     for k, v in counts.items():
+        k = k.encode("utf-8")
         for c1, c2 in zip(k, k[1:]):
-            merge_candidates[(c1, c2)] = merge_candidates.get((c1, c2), 0) + v
+            byte_pair = (bytes([c1]), bytes([c2]))
+            merge_candidates[byte_pair] = merge_candidates.get(byte_pair, 0) + v
 
     # sort by number of occurences first, then "largest" characters in pair
     merge_candidates = sorted(merge_candidates.items(), key=lambda x: (x[1], x[0]), reverse=True)
-    print(merge_candidates)
+    #print(merge_candidates)
     return merge_candidates
 
 def merge_pairs(candidates, num_merges, counts):
@@ -31,17 +33,17 @@ def merge_pairs(candidates, num_merges, counts):
     vocab = {}
     for i in range(num_merges):
         new_merge = candidates[0][0]
-        token_id = 256+i
-        vocab[token_id] = new_merge  # need to return a byte mapping here
+        # token_id = 256+i
+        vocab[i] = new_merge  # need to return a byte mapping here
         merges.append(new_merge)
-        counts = update_counts(counts, new_merge)
+        counts = update_counts(counts, new_merge, i)
         candidates = find_merge_candidates(counts) # first thing to improve. need to combine this and previous step.
-        print(new_merge)
+        #print(new_merge)
 
     return vocab, merges
 
-def update_counts(counts, new_merge):
-    new_token = "".join(new_merge)
+def update_counts(counts, new_merge, token_id):
+    #new_token = "".join(new_merge)
     new_counts = {}
     for k, v in counts.items():
         
@@ -54,8 +56,8 @@ def update_counts(counts, new_merge):
                 skip = False
                 continue
             if new_merge == (c1, c2):
-                print(f"{c1, c2} should be merged")
-                new_k.append(new_token)
+                # print(f"{c1, c2} should be merged")
+                new_k.append(token_id + 256)
                 skip = True
                 update = True
             else:
@@ -65,7 +67,7 @@ def update_counts(counts, new_merge):
             if update and not skip:
                 new_k.append(c2)
         if update:
-            print(f"going from {k} to {tuple(new_k)}")
+            # print(f"going from {k} to {tuple(new_k)}")
             k = tuple(new_k)
         new_counts[k] = new_counts.get(k, 0) + v
 
@@ -78,7 +80,7 @@ def update_counts(counts, new_merge):
 if __name__ == "__main__":
     
     with cProfile.Profile() as profile:
-        vocab, merges = train_bpe(input_path="data/TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
+        vocab, merges = train_bpe(input_path="data/minimal.txt", vocab_size=270, special_tokens=[])#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
 
         result = pstats.Stats(profile)
         result.sort_stats(pstats.SortKey.TIME)

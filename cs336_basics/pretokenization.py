@@ -53,7 +53,7 @@ def find_chunk_boundaries(
     return sorted(set(chunk_boundaries))
 
 ## Usage
-def pretokenize_file(filepath: str, num_processes: int) -> dict[tuple[bytes, bytes], int]:
+def pretokenize_file(filepath: str, num_processes: int) -> dict[str, int]:
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
     counts = dict()
     with open(filepath, "rb") as f:
@@ -70,7 +70,7 @@ def pretokenize_file(filepath: str, num_processes: int) -> dict[tuple[bytes, byt
             split_text = re.findall(PAT, chunk) #"some text that i'll pre-tokenize")
             
             for word in split_text:
-                counts[tuple(word)] = counts.get(tuple(word), 0) + 1
+                counts[word] = counts.get(word, 0) + 1
 
             print("completed chunk")
             
