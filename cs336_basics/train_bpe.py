@@ -7,13 +7,14 @@ from cs336_basics.pretokenization import (find_chunk_boundaries,
 
 
 def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    num_merges = vocab_size - 255
+    num_merges = vocab_size - 256
+    vocab = {i:bytes([i]) for i in range(256)}
     counts = pretokenize_file(filepath=input_path, num_processes=4, special_tokens=special_tokens)
-    candidates = find_merge_candidates(counts)
+    candidates = find_merge_candidates(counts, vocab)
 
     return merge_pairs(candidates, num_merges=num_merges, counts=counts)
 
-def find_merge_candidates(counts):
+def find_merge_candidates(counts, vocab):
     # look through all dict antries, find pairs and add to new dict.
     merge_candidates = {}
     for k, v in counts.items():
@@ -22,28 +23,31 @@ def find_merge_candidates(counts):
             byte_pair = (c1, c2) #(bytes([c1]), bytes([c2]))
             merge_candidates[byte_pair] = merge_candidates.get(byte_pair, 0) + v
 
-    # sort by number of occurences first, then "largest" characters in pair
-    merge_candidates = sorted(merge_candidates.items(), key=lambda x: (x[1], x[0]), reverse=True)
+    # sort by number of occurences first, then "largest" characters in lexicographical order
+    merge_candidates = sorted(merge_candidates.items(), key=lambda x: (x[1], (vocab[x[0][0]], vocab[x[0][1]])), reverse=True)
     #print(merge_candidates)
     return merge_candidates
 
 def merge_pairs(candidates, num_merges, counts):
     # merge num_merges most common pairs
     merges = []
-    vocab = {i:chr(i).encode() for i in range(256)}
+    vocab = {i:bytes([i]) for i in range(256)}
     for i in range(num_merges):
-        new_merge = candidates[0][0] #bytes(candidates[0][0]) #tuple(bytes([i]) for i in candidates[0][0])
-        #print(f"new merge {new_merge}")
-        token_id = 255+i
-        #print(new_merge)
-        vocab[token_id] = new_merge  # need to return a byte mapping here
-        #print("u")
-        merges.append(new_merge)
-        counts = update_counts(counts, new_merge, token_id=token_id)
-        #print(counts)
-        candidates = find_merge_candidates(counts) # first thing to improve. need to combine this and previous step.
-        #print(new_merge)
+        token_id = 256 + i
+        best_pair = candidates[0][0] 
 
+        token_a, token_b = best_pair
+        bytes_a, bytes_b = vocab[token_a], vocab[token_b]
+
+        #print(new_merge)
+        vocab[token_id] = bytes_a + bytes_b  # need to return a byte mapping here
+        #print("u")
+        merges.append((bytes_a, bytes_b))
+        counts = update_counts(counts, best_pair, token_id=token_id)
+        #print(counts)
+        candidates = find_merge_candidates(counts, vocab) # first thing to improve. need to combine this and previous step.
+        #print(new_merge)
+        assert(len())
     return vocab, merges
 
 def update_counts(counts, new_merge, token_id):
