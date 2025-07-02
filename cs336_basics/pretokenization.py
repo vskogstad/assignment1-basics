@@ -53,8 +53,12 @@ def find_chunk_boundaries(
     return sorted(set(chunk_boundaries))
 
 ## Usage
-def pretokenize_file(filepath: str, num_processes: int) -> dict[str, int]:
+def pretokenize_file(filepath: str, num_processes: int, special_tokens: list[str]) -> dict[str, int]:
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+    escaped = [re.escape(token) for token in special_tokens]
+    print(escaped)
+    SPECIAL = r"|".join(escaped)#r"""<|endoftext|>"""
+    print(SPECIAL)
     counts = dict()
     with open(filepath, "rb") as f:
         boundaries = find_chunk_boundaries(
@@ -65,12 +69,16 @@ def pretokenize_file(filepath: str, num_processes: int) -> dict[str, int]:
         for start, end in zip(boundaries[:-1], boundaries[1:]):
             f.seek(start)
             chunk = f.read(end - start).decode("utf-8", errors="ignore")
+            # Remove special tokens in chunk.
+            split_special = "".join(re.split(SPECIAL, chunk))
+            #print(split_special)
+
             # Run pre-tokenization on your chunk and store the counts for each pre-token
-            
-            split_text = re.findall(PAT, chunk) #"some text that i'll pre-tokenize")
+
+            split_text = re.findall(PAT, split_special) #"some text that i'll pre-tokenize")
             
             for word in split_text:
-                counts[word] = counts.get(word, 0) + 1
+                counts[tuple(word.encode())] = counts.get(tuple(word.encode()), 0) + 1
 
             print("completed chunk")
             
