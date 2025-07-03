@@ -52,12 +52,11 @@ def find_chunk_boundaries(
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
     return sorted(set(chunk_boundaries))
 
-## Usage
+
 def pretokenize_file(filepath: str, num_processes: int, special_tokens: list[str]) -> dict[str, int]:
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
     escaped = [re.escape(token) for token in special_tokens]
-    print(escaped)
-    SPECIAL = r"|".join(escaped)#r"""<|endoftext|>"""
+    SPECIAL = r"|".join(escaped)
     print(SPECIAL)
     counts = dict()
     with open(filepath, "rb") as f:
