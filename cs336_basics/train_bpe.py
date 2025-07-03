@@ -6,12 +6,12 @@ from cs336_basics.pretokenization import (find_chunk_boundaries,
                                           pretokenize_file)
 
 
-def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str], num_processes: int = 4) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     num_merges = vocab_size - 256 - len(special_tokens)
     vocab = {i:bytes([i]) for i in range(256)}
     vocab.update({256+i:token.encode("utf-8") for i, token in enumerate(special_tokens)})
 
-    counts = pretokenize_file(filepath=input_path, num_processes=4, special_tokens=special_tokens)
+    counts = pretokenize_file(filepath=input_path, num_processes=num_processes, special_tokens=special_tokens)
     candidates = find_merge_candidates(counts, vocab)
 
     return merge_pairs(candidates, num_merges=num_merges, counts=counts, vocab=vocab)
@@ -92,7 +92,7 @@ def update_counts(counts, new_merge, token_id):
 if __name__ == "__main__":
     
     with cProfile.Profile() as profile:
-        vocab, merges = train_bpe(input_path="data/TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=["<|endoftext|>","<|imstart|>"])#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
+        vocab, merges = train_bpe(input_path="data/TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=["<|endoftext|>","<|imstart|>"], num_processes=4)#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
 
         result = pstats.Stats(profile)
         result.sort_stats(pstats.SortKey.TIME)
