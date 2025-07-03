@@ -15,10 +15,28 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str], num_p
     vocab.update({256+i:token.encode("utf-8") for i, token in enumerate(special_tokens)})
 
     counts = pretokenize_file(filepath=input_path, num_processes=num_processes, special_tokens=special_tokens)
-    candidates, used_words = find_merge_candidates(counts, vocab)
-    return merge_pairs(candidates, used_words, num_merges=num_merges, counts=counts, vocab=vocab)
+    candidates, used_words = find_initial_merge_candidates(counts, vocab)
+    
+    # Start merging tokens and updating the initial dictionaries incrementally.
+    merges = []
+    token_id = len(vocab)
+    for _ in range(num_merges):
+        # sort by number of occurences first, then "largest" characters in lexicographical order using vocab
+        # Not happy about using the vocab dict as a sorting key. Perhaps an indication that merge candidates "should" not be stored as ints in the first place?
+        best_pair = sorted(candidates.items(), key=lambda x: (x[1], (vocab[x[0][0]], vocab[x[0][1]])), reverse=True)[0][0] 
+        
+        token_a, token_b = best_pair
+        bytes_a, bytes_b = vocab[token_a], vocab[token_b]
 
-def find_merge_candidates(counts: Counter, vocab: dict) -> tuple[dict[int, tuple], dict[set]]:
+        vocab[token_id] = bytes_a + bytes_b  # need to return a byte mapping
+        merges.append((bytes_a, bytes_b))
+
+        counts, candidates, used_words = update_dictionaries(counts=counts, candidates=candidates, used_words=used_words, best_pair=best_pair, token_id=token_id)
+        token_id += 1
+
+    return vocab, merges
+
+def find_initial_merge_candidates(counts: Counter, vocab: dict) -> tuple[dict[int, tuple], dict[set]]:
     """look through all dict entries, find pairs and add to new dict."""
     merge_candidates = Counter() # Counts occurences of every pair of tokens
     used_words = {} # Keys: pair or tokens | Value: set of all words containg this pair
@@ -32,47 +50,29 @@ def find_merge_candidates(counts: Counter, vocab: dict) -> tuple[dict[int, tuple
     
     return merge_candidates, used_words
 
-def merge_pairs(candidates, used_words, num_merges, counts, vocab):
-    """merge num_merges most common pairs"""
-    merges = []
-    token_id = len(vocab)
-    for _ in range(num_merges):
-        # sort by number of occurences first, then "largest" characters in lexicographical order using vocab
-        # Not happy about using the vocab dict as a sorting key. Perhaps an indication that merge candidates "should" not be stored as ints in the first place?
-        best_pair = sorted(candidates.items(), key=lambda x: (x[1], (vocab[x[0][0]], vocab[x[0][1]])), reverse=True)[0][0] 
-        
-        token_a, token_b = best_pair
-        bytes_a, bytes_b = vocab[token_a], vocab[token_b]
-
-        #print(new_merge)
-        vocab[token_id] = bytes_a + bytes_b  # need to return a byte mapping here
-        #print("u")
-        merges.append((bytes_a, bytes_b))
-        counts, candidates, used_words = update_candidates(counts=counts,candidates=candidates, used_words=used_words, best_pair=best_pair, token_id=token_id)
-        #print(counts)
-        #candidates, used_words = find_merge_candidates(counts, vocab) # first thing to improve. need to combine this and previous step.
-        #print(new_merge)
-        token_id += 1
-        #print(merges)
-    return vocab, merges
-
-def update_candidates(counts, candidates, used_words, best_pair, token_id):
-    # Iterate over used words in the best pair. 
-    # Count pairs using old and new encoding and update candidate and counts dictionary with the difference
-    new_candidates = Counter()
-    words_to_merge = used_words[best_pair]
+def merge_candidates(candidates, new_candidates):
+    """Takes unordered dicts of candidates and new candidates and returns (partially) ordered dict"""
+    return candidates
     
-    for word in words_to_merge:
+
+def update_dictionaries(counts: Counter[int], candidates: Counter[int], used_words: dict[list], best_pair: tuple[int, int], token_id: int):
+    """Iterate over used words in the best pair. 
+    For the best pair, go through all of the words in used_words, update to the new merged token and update:
+        -The counts dictionary with new keys (the tokens) has updated after merging.
+        -The candidates dictionary with new counts for all neigbouring pairs in the used words.
+        -The used_words dictionary and remove/add links to words that have lost and gained pairs after the merge(tup and ntup).
+    """
+    new_candidates = Counter()
+    
+    for word_tuple in used_words[best_pair]:
         
-        word_tuple, num_occurences = word, counts[word]
-        
+        num_occurences = counts[word_tuple]
         word_tokenization = []
         skip = False
         last_pair = None
-        # iterates over e
+        # need to merge in new token without screwing with existing...
         for c1, c2 in zip(word_tuple, word_tuple[1:]):
-            # print(new_merge, (c1, c2))
-            # need to merge in new token without screwing with existing...
+           
             if skip:
                 skip = False
                 # for new pair on right side of merge
@@ -112,27 +112,21 @@ def update_candidates(counts, candidates, used_words, best_pair, token_id):
         old_pairs = set((a, b) for a, b in zip(word_tuple, word_tuple[1:]))
         new_pairs = set((a, b) for a, b in zip(new_k, new_k[1:]))
 
-        #old pairs not in new are removed
-        #print(f"{k=}, {v=}  |  {old_pairs=}, {new_pairs=}, {old_pairs.difference(new_pairs)=}, {new_pairs.difference(old_pairs)=}")
-        #import sys; sys.exit()
-        
+        #old pairs are removed       
         for tup in old_pairs:
-            if tup != best_pair:
+            if tup != best_pair: # cant remove as we are iterating over used_words[best_pair]
                 used_words[tup].remove(word_tuple) 
+        # new pairs are added
         for ntup in new_pairs:
             used_words[ntup] = used_words.get(ntup, set())
             used_words[ntup].add(new_k) 
         
-
-    #print(new_candidates)
-    # Delete best_pair directly to save excess updates.
+    
     candidates.update(new_candidates)
-    #print(candidates[best_pair])
-    assert candidates[best_pair] == 0
+    assert candidates[best_pair] == 0 #Temp check. Delete best_pair directly to save excess updates.
     #import sys; sys.exit()
     del candidates[best_pair]
     del used_words[best_pair]
-
 
     return counts, candidates, used_words
 
