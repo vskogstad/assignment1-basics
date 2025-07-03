@@ -1,6 +1,7 @@
 import cProfile
 import pstats
 from typing import BinaryIO
+from collections import Counter
 
 from cs336_basics.pretokenization import (find_chunk_boundaries,
                                           pretokenize_file)
@@ -18,11 +19,12 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str], num_p
 
 def find_merge_candidates(counts: dict, vocab: dict) -> dict[int, tuple]:
     """look through all dict entries, find pairs and add to new dict."""
-    merge_candidates = {}
+    merge_candidates = Counter()
     for k, v in counts.items():
         for c1, c2 in zip(k, k[1:]):
             pair = (c1, c2) 
-            merge_candidates[pair] = merge_candidates.get(pair, 0) + v
+            merge_candidates[pair] += v
+            #merge_candidates[pair] = merge_candidates.get(pair, 0) + v
 
     # sort by number of occurences first, then "largest" characters in lexicographical order using vocab
     # Not happy about using the vocab dict as a sorting key. Perhaps an indication that merge candidates "should" not be stored as ints in the first place?

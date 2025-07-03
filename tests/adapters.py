@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import cProfile
+import pstats
 import os
 from collections.abc import Iterable
 from typing import IO, Any, BinaryIO
@@ -8,6 +10,7 @@ import numpy.typing as npt
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
+
 
 
 def run_linear(
@@ -588,5 +591,14 @@ def run_train_bpe(
                 Merges are ordered by order of creation.
     """
     from cs336_basics.train_bpe import train_bpe
-    return train_bpe(input_path=input_path, vocab_size=vocab_size, special_tokens=special_tokens)
+    with cProfile.Profile() as profile:
+        vocab, merges = train_bpe(input_path=input_path, vocab_size=vocab_size, special_tokens=special_tokens)
+
+        result = pstats.Stats(profile)
+        result.sort_stats(pstats.SortKey.TIME)
+        result.print_stats(10)
+
+
+
+    return vocab, merges
 
