@@ -1,6 +1,8 @@
 import os
+from collections import Counter
+from multiprocessing import Lock, Pool
 from typing import BinaryIO
-from multiprocessing import Pool, Lock
+
 import regex as re
 
 
@@ -54,19 +56,18 @@ def find_chunk_boundaries(
 
 def split_chunk(filepath, SPECIAL, start, end):
     print(f"This is process {os.getpid()}")
-    counts = {}
-    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+    counts = Counter()
+    PAT = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
     with open(filepath, "rb") as f:
         f.seek(start)
         chunk = f.read(end - start).decode("utf-8", errors="ignore")
-        split_text = []
         #lock = Lock()
         split_special = re.split(SPECIAL, chunk)
         for document in split_special:
-            split_text.extend(re.findall(PAT, document)) #"some text that i'll pre-tokenize")
-            for word in re.findall(PAT, document):
+            for word in PAT.findall(document): # Could potential fail if large and no <|endoftex|>. Use re.finditer() if problematic.
+                
                 encoded = tuple(word.encode())
-                counts[encoded] = counts.get(encoded, 0) + 1
+                counts[encoded] += 1
                 
     return counts
 
