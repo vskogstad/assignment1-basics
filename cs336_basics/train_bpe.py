@@ -16,22 +16,22 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tu
 
     return merge_pairs(candidates, num_merges=num_merges, counts=counts, vocab=vocab)
 
-def find_merge_candidates(counts, vocab):
-    # look through all dict antries, find pairs and add to new dict.
+def find_merge_candidates(counts: dict, vocab: dict) -> dict[int, tuple]:
+    """look through all dict entries, find pairs and add to new dict."""
     merge_candidates = {}
     for k, v in counts.items():
-        #k = k.encode("utf-8")
         for c1, c2 in zip(k, k[1:]):
-            byte_pair = (c1, c2) #(bytes([c1]), bytes([c2]))
-            merge_candidates[byte_pair] = merge_candidates.get(byte_pair, 0) + v
+            pair = (c1, c2) 
+            merge_candidates[pair] = merge_candidates.get(pair, 0) + v
 
-    # sort by number of occurences first, then "largest" characters in lexicographical order
+    # sort by number of occurences first, then "largest" characters in lexicographical order using vocab
+    # Not happy about using the vocab dict as a sorting key. Perhaps an indication that merge candidates "should" not be stored as ints in the first place?
     merge_candidates = sorted(merge_candidates.items(), key=lambda x: (x[1], (vocab[x[0][0]], vocab[x[0][1]])), reverse=True)
-    #print(merge_candidates)
+
     return merge_candidates
 
 def merge_pairs(candidates, num_merges, counts, vocab):
-    # merge num_merges most common pairs
+    """merge num_merges most common pairs"""
     merges = []
     token_id = len(vocab)
     for _ in range(num_merges):
@@ -92,7 +92,7 @@ def update_counts(counts, new_merge, token_id):
 if __name__ == "__main__":
     
     with cProfile.Profile() as profile:
-        vocab, merges = train_bpe(input_path="data/minimal.txt", vocab_size=270, special_tokens=["<|endoftext|>","<|imstart|>"])#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
+        vocab, merges = train_bpe(input_path="data/TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=["<|endoftext|>","<|imstart|>"])#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
 
         result = pstats.Stats(profile)
         result.sort_stats(pstats.SortKey.TIME)
