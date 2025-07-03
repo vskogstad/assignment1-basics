@@ -1,6 +1,6 @@
 import os
 from typing import BinaryIO
-
+from multiprocessing import Pool, Lock
 import regex as re
 
 
@@ -52,37 +52,44 @@ def find_chunk_boundaries(
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
     return sorted(set(chunk_boundaries))
 
+def split_chunk(filepath, SPECIAL, start, end):
+    print(f"This is process {os.getpid()}")
+    counts = {}
+    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+    with open(filepath, "rb") as f:
+        f.seek(start)
+        chunk = f.read(end - start).decode("utf-8", errors="ignore")
+        split_text = []
+        #lock = Lock()
+        split_special = re.split(SPECIAL, chunk)
+        for document in split_special:
+            split_text.extend(re.findall(PAT, document)) #"some text that i'll pre-tokenize")
+            for word in re.findall(PAT, document):
+                encoded = tuple(word.encode())
+                counts[encoded] = counts.get(encoded, 0) + 1
+                
+    return counts
 
 def pretokenize_file(filepath: str, num_processes: int, special_tokens: list[str]) -> dict[str, int]:
-    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+    # Preprocessing special tokens 
     escaped = [re.escape(token) for token in special_tokens]
     SPECIAL = r"|".join(escaped)
-    print(SPECIAL)
-    counts = dict()
+    
     with open(filepath, "rb") as f:
         boundaries = find_chunk_boundaries(
             f, num_processes, "<|endoftext|>".encode("utf-8"))
-            
-        # The following is a serial implementation, but you can parallelize this 
-        # by sending each start/end pair to a set of processes.
-        for start, end in zip(boundaries[:-1], boundaries[1:]):
-            f.seek(start)
-            chunk = f.read(end - start).decode("utf-8", errors="ignore")
-            # Remove special tokens in chunk.
-            split_special = re.split(SPECIAL, chunk)
-            #print(split_special)
+        
+        print(len(boundaries))
 
-            # Run pre-tokenization on your chunk and store the counts for each pre-token
-            # Bad, but try passing test first
-            split_text = []
-            for document in split_special:
-                split_text.extend(re.findall(PAT, document)) #"some text that i'll pre-tokenize")
-            
-            for word in split_text:
-                counts[tuple(word.encode())] = counts.get(tuple(word.encode()), 0) + 1
+    # Multiprocessing
+    p = Pool(num_processes)
+    args = [(filepath, SPECIAL, start, end) for start, end in zip(boundaries[:-1], boundaries[1:])]
+    collected = p.starmap(split_chunk, args)
+    
+    # Hopefully temporary code to merge dictionaries from each process
+    counts = collected[0]
+    for d in collected[1:]:
+        for k, v in d.items():
+            counts[k] = counts.get(k, 0) + v
 
-            print("completed chunk")
-            
-    
-    return counts    
-    
+    return counts
