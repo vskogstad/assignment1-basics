@@ -30,15 +30,12 @@ def find_chunk_boundaries(
     # Chunks start on previous index, don't include last index
     chunk_boundaries = [i * chunk_size for i in range(desired_num_chunks + 1)]
     chunk_boundaries[-1] = file_size
-    
-    chunk_bu_boundaries = chunk_boundaries[:]
-    backup_split_token = ".\n".encode("utf-8")
 
 
     mini_chunk_size = 4096  # Read ahead by 4k bytes at a time
 
     for bi in range(1, len(chunk_boundaries) - 1):
-        no_backup = True
+
         initial_position = chunk_boundaries[bi]
         file.seek(initial_position)  # Start at boundary guess
         while True:
@@ -50,23 +47,14 @@ def find_chunk_boundaries(
                 break
 
             # Find the special token in the mini chunk
-            
             found_at = mini_chunk.find(split_special_token)
             if found_at != -1:
                 chunk_boundaries[bi] = initial_position + found_at
                 break
 
-            # Find a backup breakpoint
-            if no_backup:
-                found_bu = mini_chunk.find(backup_split_token)
-                if found_bu != -1:
-                    chunk_bu_boundaries[bi] = initial_position + found_bu
-                    no_backup = False
-
             initial_position += mini_chunk_size
 
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
-    print(f"{sorted(set(chunk_boundaries))=}, {sorted(set(chunk_bu_boundaries))}")
     return sorted(set(chunk_boundaries))
 
 def split_chunk(filepath, SPECIAL, start, end):
@@ -99,9 +87,8 @@ def pretokenize_file(filepath: str, num_processes: int, special_tokens: list[str
     args = [(filepath, SPECIAL, start, end) for start, end in zip(boundaries[:-1], boundaries[1:])]
     collected = p.starmap(split_chunk, args)
     
-    # Hopefully temporary code to merge dictionaries from each process
+    # Merge dictionaries from each process
     counts = collected[0]
     for d in collected[1:]:
-        for k, v in d.items():
-            counts[k] = counts.get(k, 0) + v
+        counts.update(d)
     return counts
