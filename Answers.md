@@ -18,6 +18,9 @@ c) 0xa5 followed by any other byte. It is not a valid start byte, and can only b
 a) It takes 160 seconds on 4 processes using re.findall(), 230 secs with finditer(). Theoretically 64 GB of ram available, but just using 4 out of 8 cores. I think I might be IO-bound as I don't see improvement going up to 8.
  Almost all of the time post-tokenization is spent in the find_best_pair function iterating over a growing dictionary. ' accomplishment' is the longest word in the tokenizer.
 
+
+b) Pre-tokenization right now, with better parallelization, I might be bound by the find_best_pair algorithm.
+
          9446312 function calls (9446230 primitive calls) in 160.372 seconds
 
    Ordered by: internal time
