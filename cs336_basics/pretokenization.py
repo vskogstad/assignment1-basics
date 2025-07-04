@@ -1,6 +1,7 @@
 import os
+import mmap
 from collections import Counter
-from multiprocessing import Lock, Pool
+from multiprocessing import Pool
 from typing import BinaryIO
 
 import regex as re
@@ -57,23 +58,26 @@ def find_chunk_boundaries(
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
     return sorted(set(chunk_boundaries))
 
-def split_chunk(filepath, SPECIAL, start, end):
-    print(f"This is process {os.getpid()}")
+def split_chunk(filepath: str, SPECIAL, start: int, end: int) -> Counter[tuple[int]: int]: 
+    """Opens filepath and works on a chunk of the file specified by the start" and "end" params.
+    The SPECIAL-pattern is for finding and splitting on special tokens.
+    Maybe working on a shared dictionary would be better to avoid merging at the end? Locking might slow down more than you gain however.
+    """
+    # print(f"This is process {os.getpid()}")
     counts = Counter()
     PAT = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
     with open(filepath, "rb") as f:
         f.seek(start)
         chunk = f.read(end - start).decode("utf-8", errors="ignore")
-        #lock = Lock()
         split_special = re.split(SPECIAL, chunk)
         for document in split_special:
-            for word in PAT.findall(document): # Could potential fail if large and no <|endoftex|>. Use re.finditer() if problematic.
-                counts[tuple(word.encode())] += 1
+            for word in PAT.finditer(document): # Could potential fail if large and no <|endoftex|>. Use re.finditer() if problematic.
+                counts[tuple(word.group().encode())] += 1
                 
     return counts
 
 def pretokenize_file(filepath: str, num_processes: int, special_tokens: list[str]) -> dict[str, int]:
-    # Preprocessing special tokens 
+    # Preprocessing pattern for special tokens 
     escaped = [re.escape(token) for token in special_tokens]
     SPECIAL = r"|".join(escaped)
     
@@ -83,9 +87,10 @@ def pretokenize_file(filepath: str, num_processes: int, special_tokens: list[str
         
 
     # Multiprocessing
-    p = Pool(num_processes)
-    args = [(filepath, SPECIAL, start, end) for start, end in zip(boundaries[:-1], boundaries[1:])]
-    collected = p.starmap(split_chunk, args)
+
+    with Pool(num_processes) as p:
+        args = [(filepath, SPECIAL, start, end) for start, end in zip(boundaries[:-1], boundaries[1:])]
+        collected = p.starmap(split_chunk, args)
     
     # Merge dictionaries from each process
     counts = collected[0]

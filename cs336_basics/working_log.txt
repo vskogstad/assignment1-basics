@@ -1,0 +1,36 @@
+
+
+
+train_bpe:
+
+Good structure in place. Going over all candidates in find_best_pair is sub-optimal. 
+
+For improving find_best_pair further I think I could use heuristics like:
+-Sort candidates dict initially.
+-Based on number of merges. Limit search to top x - a*i elements in candidates. Basically, find a pair of characters that we think is really unlikely to be merged, don't check pairs after this. 
+     ("x - a*i" as we can loop over less and less of original dict because we keep removing pairs (But not a = 1 as we don't always remove from the front))
+-When adding new pairs to candidates, check if num_occurences > num_occurences of the really unlikely pair. If so we add it's key to a set of "extra candidates".
+-We would then be looping over a shrinking list of orignal 2-character pairs + some subset of new pairs instead of the continually growing candidates dict.
+
+Not doing so because it is messy and 
+
+
+
+For improving sets of new/old pairs after merging we could try updating them during the original loop, but I honestly don't think it would add much speed and it will be even less readable.
+
+tests/test_train_bpe.py::test_train_bpe_speed This is process 1432934
+         635203 function calls (635201 primitive calls) in 0.378 seconds
+
+   Ordered by: internal time
+   List reduced from 330 to 10 due to restriction <10>
+ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+      243    0.147    0.001    0.213    0.001 /home/vegard/projects/stanford/assignment1-basics/cs336_basics/train_bpe.py:74(update_dictionaries)
+      243    0.053    0.000    0.053    0.000 /home/vegard/projects/stanford/assignment1-basics/cs336_basics/train_bpe.py:53(find_best_pair)
+       19    0.029    0.002    0.029    0.002 {method 'acquire' of '_thread.lock' objects}
+        4    0.029    0.007    0.029    0.007 {built-in method posix.fork}
+        1    0.024    0.024    0.031    0.031 /home/vegard/projects/stanford/assignment1-basics/cs336_basics/train_bpe.py:39(find_initial_merge_candidates)
+   106918    0.014    0.000    0.014    0.000 /home/vegard/projects/stanford/assignment1-basics/cs336_basics/train_bpe.py:128(<genexpr>)
+   105835    0.013    0.000    0.013    0.000 {method 'add' of 'set' objects}
+    91400    0.010    0.000    0.010    0.000 /home/vegard/projects/stanford/assignment1-basics/cs336_basics/train_bpe.py:129(<genexpr>)
+        1    0.010    0.010    0.010    0.010 {method 'acquire' of '_multiprocessing.SemLock' objects}
+   115924    0.010    0.000    0.010    0.000 {method 'get' of 'dict' objects}
