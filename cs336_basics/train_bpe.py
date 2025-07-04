@@ -44,14 +44,13 @@ def find_initial_merge_candidates(counts: Counter, vocab: dict) -> tuple[dict[in
         for c1, c2 in zip(word_tuple, word_tuple[1:]):
             pair = (c1, c2) 
             merge_candidates[pair] += num_occurences
-            #merge_candidates[pair] = merge_candidates.get(pair, 0) + v
             used_words[pair] = used_words.get(pair, set()) 
             used_words[pair].add(word_tuple)
     
     return merge_candidates, used_words
 
 def find_best_pair(candidates, vocab):
-    """Takes unordered dicts of candidates and new candidates and returns (partially) ordered dict"""
+    """Takes unordered dicts of candidates and finds the best pair in linear time"""
     max_num = 0
     max_pair = []
     
@@ -153,11 +152,20 @@ def update_dictionaries(counts: Counter[int], candidates: Counter[int], used_wor
 if __name__ == "__main__":
     
     with cProfile.Profile() as profile:
-        vocab, merges = train_bpe(input_path="data/TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=["<|endoftext|>","<|imstart|>"], num_processes=4)#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
+        vocab, merges = train_bpe(input_path="data/TinyStoriesV2-GPT4-train.txt", vocab_size=10000, special_tokens=["<|endoftext|>","<|imstart|>"], num_processes=8)#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
 
         result = pstats.Stats(profile)
         result.sort_stats(pstats.SortKey.TIME)
         result.print_stats(10)
+        
+
+        # save data
+        # import sys; sys.exit()
+        import json
+        with open("cs336_basics/tokenizer_tinystories.json","w") as f:
+            json.dump((vocab, merges), f, default=repr, indent=4)
+
+        longest_token = max(vocab.values(), key=lambda x: len(x.__repr__()))
+        print(longest_token)
 
 
-    print(f"{len(vocab)=}, {vocab.items()=}, {merges[0]}")
