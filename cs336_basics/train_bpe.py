@@ -23,7 +23,7 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str], num_p
     for _ in range(num_merges):
         # sort by number of occurences first, then "largest" characters in lexicographical order using vocab
         # Not happy about using the vocab dict as a sorting key. Perhaps an indication that merge candidates "should" not be stored as ints in the first place?
-        best_pair = sorted(candidates.items(), key=lambda x: (x[1], (vocab[x[0][0]], vocab[x[0][1]])), reverse=True)[0][0] 
+        best_pair = find_best_pair(candidates, vocab) # sorted(candidates.items(), key=lambda x: (x[1], (vocab[x[0][0]], vocab[x[0][1]])), reverse=True)[0][0] 
         
         token_a, token_b = best_pair
         bytes_a, bytes_b = vocab[token_a], vocab[token_b]
@@ -50,9 +50,25 @@ def find_initial_merge_candidates(counts: Counter, vocab: dict) -> tuple[dict[in
     
     return merge_candidates, used_words
 
-def merge_candidates(candidates, new_candidates):
+def find_best_pair(candidates, vocab):
     """Takes unordered dicts of candidates and new candidates and returns (partially) ordered dict"""
-    return candidates
+    max_num = 0
+    max_pair = []
+    
+    for pair, num in candidates.items():
+        if num < max_num:
+            continue
+        if num == max_num:
+            max_pair.append(pair)
+        else:
+            max_num = num
+            max_pair = [pair]
+    
+    # print(max_pair, max_num)
+    if len(max_pair) > 1:
+        max_pair = sorted(max_pair, key=lambda x: (vocab[x[0]], vocab[x[1]]), reverse=True)
+    
+    return max_pair[0]
     
 
 def update_dictionaries(counts: Counter[int], candidates: Counter[int], used_words: dict[list], best_pair: tuple[int, int], token_id: int):
@@ -112,7 +128,7 @@ def update_dictionaries(counts: Counter[int], candidates: Counter[int], used_wor
         old_pairs = set((a, b) for a, b in zip(word_tuple, word_tuple[1:]))
         new_pairs = set((a, b) for a, b in zip(new_k, new_k[1:]))
 
-        #old pairs are removed       
+        # old pairs are removed       
         for tup in old_pairs:
             if tup != best_pair: # cant remove as we are iterating over used_words[best_pair]
                 used_words[tup].remove(word_tuple) 
