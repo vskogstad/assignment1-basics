@@ -152,7 +152,7 @@ def update_dictionaries(counts: Counter[int], candidates: Counter[int], used_wor
 if __name__ == "__main__":
     
     with cProfile.Profile() as profile:
-        vocab, merges = train_bpe(input_path="data/TinyStoriesV2-GPT4-train.txt", vocab_size=10000, special_tokens=["<|endoftext|>","<|imstart|>"], num_processes=8)#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
+        vocab, merges = train_bpe(input_path="data/owt_train.txt", vocab_size=32000, special_tokens=["<|endoftext|>","<|imstart|>"], num_processes=1)#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
 
         result = pstats.Stats(profile)
         result.sort_stats(pstats.SortKey.TIME)
@@ -162,7 +162,7 @@ if __name__ == "__main__":
         # save data
         # import sys; sys.exit()
         import json
-        with open("cs336_basics/tokenizer_tinystories.json","w") as f:
+        with open("cs336_basics/tokenizer_owt.json","w") as f:
             json.dump((vocab, merges), f, default=repr, indent=4)
 
         longest_token = max(vocab.values(), key=lambda x: len(x.__repr__()))
