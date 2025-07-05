@@ -6,6 +6,8 @@ from typing import BinaryIO
 
 import regex as re
 
+# TODO: Use mmap.mmap on the file in each subprocess and read the file chunkwise.
+#       Have tested with LLM-code which works for larger files where my implementation runs out of memory.
 
 def find_chunk_boundaries(
     file: BinaryIO, 

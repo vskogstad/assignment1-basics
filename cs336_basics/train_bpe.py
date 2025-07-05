@@ -3,8 +3,11 @@ import pstats
 from collections import Counter
 from typing import BinaryIO
 
-from cs336_basics.pretokenization import (find_chunk_boundaries,
-                                          pretokenize_file)
+from cs336_basics.pretokenization import find_chunk_boundaries, pretokenize_file
+
+#TODO: Instead of iterating over the entire candidates dict each time. Keep a best_pairs list of n elements. 
+#       When adding new tokens to the vocab, iterate over new tokens and at them to the best_pairs list if they are above the minimum threshold in the list. 
+#       Once the value of the highest pair in best_pairs is below the threshold, we can no longer guarantee that it contains the best merging candidate, we then do a full iteration and create a new best_pair list.
 
 
 def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str], num_processes: int = 4) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
@@ -20,18 +23,24 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str], num_p
     # Start merging tokens and updating the initial dictionaries incrementally.
     merges = []
     token_id = len(vocab)
+    best_pairs = {"max_pairs_sorted":[], 
+                "good_pairs":set(), 
+                "resorting_value":0,
+                "resort_needed":True
+                } 
+    
     for _ in range(num_merges):
-        # sort by number of occurences first, then "largest" characters in lexicographical order using vocab
-        # Not happy about using the vocab dict as a sorting key. Perhaps an indication that merge candidates "should" not be stored as ints in the first place?
-        best_pair = find_best_pair(candidates, vocab) # sorted(candidates.items(), key=lambda x: (x[1], (vocab[x[0][0]], vocab[x[0][1]])), reverse=True)[0][0] 
         
-        token_a, token_b = best_pair
+
+        candidates, best_pairs = find_best_pair(candidates, vocab, best_pairs) # sorted(candidates.items(), key=lambda x: (x[1], (vocab[x[0][0]], vocab[x[0][1]])), reverse=True)[0][0] 
+        
+        token_a, token_b = best_pairs["max_pairs_sorted"][-1] # sorted in reverse order for efficient poping.
         bytes_a, bytes_b = vocab[token_a], vocab[token_b]
 
         vocab[token_id] = bytes_a + bytes_b  # need to return a byte mapping
         merges.append((bytes_a, bytes_b))
 
-        counts, candidates, used_words = update_dictionaries(counts=counts, candidates=candidates, used_words=used_words, best_pair=best_pair, token_id=token_id)
+        counts, candidates, used_words, best_pairs = update_dictionaries(counts=counts, candidates=candidates, used_words=used_words, bps=best_pairs, token_id=token_id)
         token_id += 1
 
     return vocab, merges
@@ -49,12 +58,60 @@ def find_initial_merge_candidates(counts: Counter, vocab: dict) -> tuple[dict[in
     
     return merge_candidates, used_words
 
-def find_best_pair(candidates, vocab):
+
+def find_best_pair(candidates: Counter[tuple[int,int]: int], vocab, bps: dict[list[tuple[int, int]], list[tuple[int, int]], int, int]):
     """Takes unordered dicts of candidates and finds the best pair in linear time"""
+    
+    if not bps["resort_needed"]: # and bps["max_pairs_sorted"]:
+        return candidates, bps
+    
+    # if the list is empty or max_value in list is lower than limit we sort candidates dict.
+    pairs_under = set()
+    if bps["good_pairs"]:
+        sort_needed = True
+        for pair in bps["good_pairs"]:
+            if candidates[pair] >= bps["resorting_limit"]:
+                sort_needed = False
+                break
+            else:
+                pairs_under.add(pair)
+                
+    [bps["good_pairs"].remove(pair) for pair in pairs_under]
+    
+    if not bps["good_pairs"] or sort_needed:
+        print("Finding new good pairs (sorting)")
+        # sort by number of occurences first, then "largest" characters in lexicographical order using vocab
+        sorted_list = sorted(candidates.items(), key=lambda x: x[1], reverse=True)
+    
+        # print(sorted_list[:15])
+        candidates = Counter({pair:candidates[pair] for pair, _ in sorted_list}) # only sorting for marginally easier sorting next time
+        # print(candidates)
+        # iterate from starting 
+        # resorting_limit, list of n best pairs
+
+
+        # Iterate from halfway point until value decreases. All of these will be included in best_pairs
+        start = len(sorted_list) // 2
+        bps["resorting_limit"] = sorted_list[start][1]
+        pos = start
+        
+        while pos < len(sorted_list):
+            #print(sorted_list[pos][1])
+            if sorted_list[pos][1] < bps["resorting_limit"]:
+                break
+            pos += 1
+        bps["good_pairs"] = set(pair for pair, _ in sorted_list[:pos])
+        # print(bps)
+        # import sys; sys.exit()
+
+
+    # We now go through the good_pairs_list lineary and find the best pair
     max_num = 0
     max_pair = []
-    
-    for pair, num in candidates.items():
+
+    # sort by number of occurences first, 
+    for pair in bps["good_pairs"]:
+        num = candidates[pair]
         if num < max_num:
             continue
         if num == max_num:
@@ -63,22 +120,34 @@ def find_best_pair(candidates, vocab):
             max_num = num
             max_pair = [pair]
     
-    # print(max_pair, max_num)
+    bps["max_pairs_sorted"] = max_pair
+
+
+    # If tie, sort by "largest" characters in lexicographical order using vocab
     if len(max_pair) > 1:
-        max_pair = sorted(max_pair, key=lambda x: (vocab[x[0]], vocab[x[1]]), reverse=True)
+        bps["max_pairs_sorted"] = sorted(max_pair, key=lambda x: (vocab[x[0]], vocab[x[1]]), reverse=False)
     
-    return max_pair[0]
+    
+    return candidates, bps
+
     
 
-def update_dictionaries(counts: Counter[int], candidates: Counter[int], used_words: dict[list], best_pair: tuple[int, int], token_id: int):
+def update_dictionaries(counts: Counter[int], candidates: Counter[int], used_words: dict[list], bps: dict, token_id: int):
     """Iterate over used words in the best pair. 
     For the best pair, go through all of the words in used_words, update to the new merged token and update:
         -The counts dictionary with new keys (the tokens) has updated after merging.
         -The candidates dictionary with new counts for all neigbouring pairs in the used words.
         -The used_words dictionary and remove/add links to words that have lost and gained pairs after the merge(tup and ntup).
     """
+    """best_pairs = {"max_pairs_sorted":[], 
+                      "best_pairs":[], 
+                      "resorting_value":0,
+                      "resort_needed":True
+                      } """
     new_candidates = Counter()
-    
+    best_pair = bps["max_pairs_sorted"].pop(-1) # popping the best pair
+    bps["good_pairs"].remove(best_pair)
+
     for word_tuple in used_words[best_pair]:
         
         num_occurences = counts[word_tuple]
@@ -135,15 +204,34 @@ def update_dictionaries(counts: Counter[int], candidates: Counter[int], used_wor
         for ntup in new_pairs:
             used_words[ntup] = used_words.get(ntup, set())
             used_words[ntup].add(new_k) 
-        
+
+    # Checking if we can skip resorting our pairs. The base idea here is:
+    # - we are minting a new token, so we will only possibly decrease values of our existing max_pairs_sorted. 
+    # - After merging we create the new pairs shown in new_candidates, those that are above the minimum value gets added to good pairs
+    # - The merging can create have a new pair which have n_best_pair new tokens, this will force a recalculation of best_pairs_sorted.
+
+    bps["resort_needed"] = True # default we will have to resort.
+    # print(bps["max_pairs_sorted"])
+    # Loop over max_pairs and check if they exist in new_candidates. If so they are no longer a max_pair, and we remove them.
+    bps["max_pairs_sorted"] = [pair for pair in bps["max_pairs_sorted"] if pair not in new_candidates.keys()] 
+    # print("after:", bps["max_pairs_sorted"])
+    if bps["max_pairs_sorted"]: # Need to have items left if we should skip resorting
+        bps["resort_needed"] = False
     
-    candidates.update(new_candidates)
+    for pair, num_occurences in new_candidates.items():
+        candidates[pair] += num_occurences
+        if num_occurences >= bps["resorting_value"]:
+            bps["good_pairs"].add(pair)
+            if num_occurences == candidates[best_pair]: # We have a new best_pair candidate
+                bps["resort_needed"] = True
+    # candidates.update(new_candidates)
     assert candidates[best_pair] == 0 #Temp check. Delete best_pair directly to save excess updates.
     #import sys; sys.exit()
     del candidates[best_pair]
     del used_words[best_pair]
+    
 
-    return counts, candidates, used_words
+    return counts, candidates, used_words, bps
 
 
 
@@ -152,15 +240,16 @@ def update_dictionaries(counts: Counter[int], candidates: Counter[int], used_wor
 if __name__ == "__main__":
     
     with cProfile.Profile() as profile:
-        vocab, merges = train_bpe(input_path="data/owt_train.txt", vocab_size=32000, special_tokens=["<|endoftext|>","<|imstart|>"], num_processes=1)#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
+        vocab, merges = train_bpe(input_path="data/TinyStoriesV2-GPT4-valid.txt", vocab_size=361, special_tokens=["<|endoftext|>","<|imstart|>"], num_processes=4)#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
 
         result = pstats.Stats(profile)
         result.sort_stats(pstats.SortKey.TIME)
         result.print_stats(10)
         
-
+        longest_token = max(vocab.values(), key=lambda x: len(x.__repr__()))
+        print(longest_token)
         # save data
-        # import sys; sys.exit()
+        import sys; sys.exit()
         import json
         with open("cs336_basics/tokenizer_owt.json","w") as f:
             json.dump((vocab, merges), f, default=repr, indent=4)
