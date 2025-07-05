@@ -5,7 +5,7 @@ from typing import BinaryIO
 
 from cs336_basics.pretokenization import find_chunk_boundaries, pretokenize_file
 
-#TODO: Instead of iterating over the entire candidates dict each time. Keep a best_pairs list of n elements. 
+# Latest: Instead of iterating over the entire candidates dict each time. Keep a best_pairs dictionary with a list of n best pairs. 
 #       When adding new tokens to the vocab, iterate over new tokens and at them to the best_pairs list if they are above the minimum threshold in the list. 
 #       Once the value of the highest pair in best_pairs is below the threshold, we can no longer guarantee that it contains the best merging candidate, we then do a full iteration and create a new best_pair list.
 
@@ -84,25 +84,24 @@ def find_best_pair(candidates: Counter[tuple[int,int]: int], vocab, bps: dict[li
         sorted_list = sorted(candidates.items(), key=lambda x: x[1], reverse=True)
     
         # print(sorted_list[:15])
-        candidates = Counter({pair:candidates[pair] for pair, _ in sorted_list}) # only sorting for marginally easier sorting next time
+        candidates = Counter({pair:candidates[pair] for pair, _ in sorted_list}) # Dubious. Sorting for marginally faster sorting next time
         # print(candidates)
         # iterate from starting 
         # resorting_limit, list of n best pairs
 
 
-        # Iterate from halfway point until value decreases. All of these will be included in best_pairs
-        start = len(sorted_list) // 2
+        
+        cap = 5 # this is a hyper-parameter. Too small is bad. For 10k merges 16s with 4, 32 s with 2.
+        start = len(sorted_list) // cap
+        # Iterate from "start" point until value decreases. All of these will be included in best_pairs
         bps["resorting_limit"] = sorted_list[start][1]
         pos = start
         
         while pos < len(sorted_list):
-            #print(sorted_list[pos][1])
             if sorted_list[pos][1] < bps["resorting_limit"]:
                 break
             pos += 1
         bps["good_pairs"] = set(pair for pair, _ in sorted_list[:pos])
-        # print(bps)
-        # import sys; sys.exit()
 
 
     # We now go through the good_pairs_list lineary and find the best pair
@@ -240,7 +239,7 @@ def update_dictionaries(counts: Counter[int], candidates: Counter[int], used_wor
 if __name__ == "__main__":
     
     with cProfile.Profile() as profile:
-        vocab, merges = train_bpe(input_path="data/TinyStoriesV2-GPT4-valid.txt", vocab_size=361, special_tokens=["<|endoftext|>","<|imstart|>"], num_processes=4)#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
+        vocab, merges = train_bpe(input_path="data/TinyStoriesV2-GPT4-train.txt", vocab_size=10000, special_tokens=["<|endoftext|>","<|imstart|>"], num_processes=4)#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
 
         result = pstats.Stats(profile)
         result.sort_stats(pstats.SortKey.TIME)
@@ -249,12 +248,11 @@ if __name__ == "__main__":
         longest_token = max(vocab.values(), key=lambda x: len(x.__repr__()))
         print(longest_token)
         # save data
-        import sys; sys.exit()
+        #import sys; sys.exit()
         import json
-        with open("cs336_basics/tokenizer_owt.json","w") as f:
+        with open("cs336_basics/tokenizer_tinystories.json","w") as f:
             json.dump((vocab, merges), f, default=repr, indent=4)
 
-        longest_token = max(vocab.values(), key=lambda x: len(x.__repr__()))
-        print(longest_token)
+
 
 
