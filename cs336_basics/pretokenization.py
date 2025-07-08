@@ -1,5 +1,6 @@
-import os
 import mmap
+import os
+import time
 from collections import Counter
 from multiprocessing import Pool
 from typing import BinaryIO
@@ -7,7 +8,7 @@ from typing import BinaryIO
 import regex as re
 
 # TODO: Use mmap.mmap on the file in each subprocess and read the file chunkwise.
-#       Have tested with LLM-code which works for larger files where my implementation runs out of memory.
+#       
 
 def find_chunk_boundaries(
     file: BinaryIO, 
@@ -60,6 +61,14 @@ def find_chunk_boundaries(
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
     return sorted(set(chunk_boundaries))
 
+
+def convert_to_bytes(counts: Counter[str: int]):
+    bytes_counts = Counter()
+    for word, num in counts.items():
+        bytes_counts[word.encode()] = num
+    return bytes_counts
+
+
 def split_chunk(filepath: str, SPECIAL, PAT, start: int, end: int) -> Counter[tuple[int]: int]: 
     """Opens filepath and works on a chunk of the file specified by the start" and "end" params.
     The SPECIAL-pattern is for finding and splitting on special tokens.
@@ -102,8 +111,8 @@ def split_chunk(filepath: str, SPECIAL, PAT, start: int, end: int) -> Counter[tu
                 text_chunk = sub_chunk.decode("utf-8", errors="ignore")
                 split_special = re.split(SPECIAL, text_chunk)
                 for document in split_special:
-                    for word in PAT.finditer(document): # Could potential fail if large and no <|endoftex|>. Use re.finditer() if problematic.
-                        counts[tuple(word.group().encode())] += 1
+                    for word in PAT.findall(document): # Way faster than re.finditer(). Should not be problematic.
+                        counts[word] += 1
 
                 current_pos = sub_chunk_end    
     return counts
@@ -115,7 +124,7 @@ def pretokenize_file(filepath: str, num_processes: int, special_tokens: list[str
     PAT = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
 
 
-    
+    t0 = time.time()
 
 
     with open(filepath, "rb") as f:
@@ -133,4 +142,9 @@ def pretokenize_file(filepath: str, num_processes: int, special_tokens: list[str
     counts = collected[0]
     for d in collected[1:]:
         counts.update(d)
+    t1 = time.time()
+    print(f"Used {t1-t0:.2f} secs in multithreaded part")
+    counts = convert_to_bytes(counts)
+    t2 = time.time()
+    print(f"Used {t2-t1:.2f} secs in conversion part")
     return counts
