@@ -1,6 +1,10 @@
 # Large data files
 data/
 
+# Scalene output files
+profile.json
+profile.html
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
