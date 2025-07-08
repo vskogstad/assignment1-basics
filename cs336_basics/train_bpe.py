@@ -240,7 +240,7 @@ if __name__ == "__main__":
     
     with cProfile.Profile() as profile:
         vocab, merges = train_bpe(input_path="data/TinyStoriesV2-GPT4-train.txt", vocab_size=10000, special_tokens=["<|endoftext|>","<|imstart|>"], num_processes=8)#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
-
+        
         result = pstats.Stats(profile)
         result.sort_stats(pstats.SortKey.TIME)
         result.print_stats(10)
@@ -250,8 +250,9 @@ if __name__ == "__main__":
         # save data
         import sys; sys.exit()
         import json
+        model = {"vocab":vocab, "merges":merges}
         with open("cs336_basics/tokenizer_owt.json","w") as f:
-            json.dump((vocab, merges), f, default=repr, indent=4)
+            json.dump(model, f, default=repr, indent=4)
 
 
 
