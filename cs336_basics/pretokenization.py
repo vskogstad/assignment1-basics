@@ -76,45 +76,38 @@ def split_chunk(filepath: str, SPECIAL, PAT, start: int, end: int) -> Counter[tu
     """
     # print(f"This is process {os.getpid()}")
     counts = Counter()
-    split_bytes = "<|endoftext|>".encode("utf-8")
-    with open(filepath, "rb") as f:
-        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-        
-            # find starting point in file
-            current_pos = start 
-            mm.seek(start)
+    split_bytes = b"<|endoftext|>"
+    with open(filepath, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+    
+        # find starting point in file
+        current_pos = start 
+        mm.seek(start)
+        sub_chunk_size = 8 * 1024 * 1024
+        buffer = b""
+
+        # read one minichunk at a time, using a buffer to search backwards and split on space 
+        while current_pos < end:
+
+            sub_chunk_end = min((current_pos + sub_chunk_size), end) 
+            sub_chunk = buffer + mm[current_pos:sub_chunk_end] # read buffer from last sub_chunk + new sub_chunk 
             
-            sub_chunk_size = 32 * 1024 * 1024
+            if sub_chunk_end == end: # don't want to search for a split point or create buffer if we reached the final sub_chunk
+                buffer = b""      
+            else:
+                split_point = sub_chunk.rfind(split_bytes)  # searching from right to left in the subchunk
+                if split_point == -1:
+                    print("Did not find a proper split point, splitting at chunk end")
+                    split_point = len(sub_chunk)
+                buffer = sub_chunk[split_point:]
+                sub_chunk = sub_chunk[:split_point]
 
-            buffer = b""
+            text_chunk = sub_chunk.decode("utf-8", errors="ignore")
+            split_special = re.split(SPECIAL, text_chunk)
+            for document in split_special:
+                for word in PAT.findall(document): # Way faster than re.finditer(). Should not be problematic.
+                    counts[word] += 1
 
-            # read one minichunk at a time, using a buffer to search backwards and split on space 
-            while current_pos < end:
-                sub_chunk_end = min((current_pos + sub_chunk_size), end) 
-                
-                sub_chunk = buffer + mm[current_pos:sub_chunk_end] # read buffer from last sub_chunk + new sub_chunk 
-                
-                if sub_chunk_end == end: # don't want to search for a split point or create buffer if we reached the final sub_chunk
-                    buffer = b""
-                    
-                else:
-                    split_point = sub_chunk.rfind(split_bytes)  # searching from right to left in the subchunk
-
-                    if split_point == -1:
-                        print("Did not find a proper split point, splitting at chunk end")
-                        split_point = len(sub_chunk)
-                    
-                    buffer = sub_chunk[split_point:]
-                    sub_chunk = sub_chunk[:split_point]
-
-
-                text_chunk = sub_chunk.decode("utf-8", errors="ignore")
-                split_special = re.split(SPECIAL, text_chunk)
-                for document in split_special:
-                    for word in PAT.findall(document): # Way faster than re.finditer(). Should not be problematic.
-                        counts[word] += 1
-
-                current_pos = sub_chunk_end    
+            current_pos = sub_chunk_end    
     return counts
 
 def pretokenize_file(filepath: str, num_processes: int, special_tokens: list[str]) -> dict[str, int]:
