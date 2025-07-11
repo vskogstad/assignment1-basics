@@ -1,7 +1,7 @@
 import json
 import pickle
 from collections.abc import Iterable, Iterator
-from itertools import chain, accumulate
+from itertools import chain
 import regex as re
 
 
@@ -23,6 +23,7 @@ class Tokenizer:
 
     @classmethod
     def from_files(cls, vocab_filepath: str, merges_filepath: str, special_tokens: list[str] | None = None):
+        return NotImplementedError
         vocab = json.load(vocab_filepath)
         merges = json.load(merges_filepath)
         return cls(vocab, merges, special_tokens)
@@ -40,26 +41,28 @@ class Tokenizer:
 
         indeces = []
         for segment in segments:
+             # Need this line to work with GPT2-vocab. Can't assume Had to get LLM help for this one.
+            segment = [self.vocab_to_int[bytes([byte_val])] for byte_val in segment]
             for best_pair in self.merges:
                 if len(segment) <= 1: # No more meges possible
                     break
                 a, b = best_pair
                 new_token = a + b
-                #print(self.vocab_to_int["b' t'"])
+
                 new_token_id = self.vocab_to_int[new_token]
                 best_pair = self.vocab_to_int[a], self.vocab_to_int[b]
                 skip = False
                 word_tokenization = []
-                #print(best_pair)
+
                 for c1, c2 in zip(segment, segment[1:]):
-                    #print(type(c1), type(c2), type(best_pair[0]), type(b))
-                    #import sys; sys.exit()
+
                     if skip:
                         skip = False
                         continue
 
                     if best_pair == (c1, c2):
                         skip = True
+                        #print(f"merging {c1} and {c2} into {new_token_id}")
                         word_tokenization.append(new_token_id)
 
                     else:
@@ -108,52 +111,21 @@ class Tokenizer:
     
 
 if __name__ == "__main__":
-    vocab = {
-        "98": "b'b'",
-        "99": "b'c'",
-        "100": "b'd'",
-        "101": "b'e'",
-        "102": "b'f'",
-        "103": "b'g'",
-        "104": "b'h'",
-        "105": "b'i'",
-        "106": "b'j'",
-        "107": "b'k'",
-        "108": "b'l'",
-        "109": "b'm'",
-        }
+
     special_tokens = ["<|imstart|>"]
-    merges = [
-        [
-            "b' '",
-            "b't'"
-        ],
-        [
-            "b'h'",
-            "b'e'"
-        ],
-        [
-            "b' '",
-            "b'a'"
-        ],
-        [
-            "b' '",
-            "b's'"
-        ],
-        [
-            "b' '",
-            "b'w'"
-        ],
-        ]
     with open("cs336_basics/vocab-tiny.pkl", "rb") as vocab_file:
         vocab = pickle.load(vocab_file)
     with open("cs336_basics/merges-tiny.pkl", "rb") as merges_file:
         merges = pickle.load(merges_file)
-
+    # with open("/home/vegard/projects/stanford/assignment1-basics/tests/fixtures/gpt2_vocab.json", "rb") as vocab_file:
+    #     vocab = json.load(vocab_file)
+    # with open("/home/vegard/projects/stanford/assignment1-basics/tests/fixtures/train-bpe-reference-merges.txt", "rb") as merges_file:
+    #     merges = merges_file.read
     #with open("cs336_basics/tokenizer_tinystories.json","r") as f:
     #        vocab, merges = json.load(fp=f ) #json.dump(model, f, default=repr, indent=4)
-    a = Tokenizer(vocab=vocab, merges=merges, special_tokens=special_tokens)
-    enc = a.encode("Hello, how are you?")
+    tokenizer = Tokenizer(vocab=vocab, merges=merges, special_tokens=special_tokens)
+    print(type(tokenizer.vocab), type(tokenizer.merges))
+    enc = tokenizer.encode("Lets test how lucky we can get")
     print(enc)
-    dec = a.decode(enc)
+    dec = tokenizer.decode(enc)
     print(dec)
