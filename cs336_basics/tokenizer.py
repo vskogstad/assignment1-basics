@@ -34,6 +34,9 @@ class Tokenizer:
     def encode(self, text: str) -> list[int]:
 
         escaped = [re.escape(token.decode()) for token in self.special_tokens]
+        # regex finishes at first match. if we sort by length desc, we will get substrings of longer strings at the end. 
+        # matching <|endoftext|><|endoftext|> before <|endoftext|>
+        escaped.sort(key=len, reverse=True)
         SPECIAL = r"|".join(escaped)
         #text = text.encode("utf-8")
         PAT = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
@@ -122,7 +125,7 @@ if __name__ == "__main__":
     #     merges = merges_file.read
     #with open("cs336_basics/tokenizer_tinystories.json","r") as f:
     #        vocab, merges = json.load(fp=f ) #json.dump(model, f, default=repr, indent=4)
-    tokenizer = Tokenizer(vocab=vocab, merges=merges, special_tokens=special_tokens)
+    tokenizer = Tokenizer.from_files(vocab_filepath="cs336_basics/vocab-tiny.pkl", merges_filepath="cs336_basics/merges-tiny.pkl", special_tokens=special_tokens)
     print(type(tokenizer.vocab), type(tokenizer.merges))
     enc = tokenizer.encode("Lets test how lucky we can get")
     print(enc)
