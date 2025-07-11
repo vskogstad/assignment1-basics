@@ -66,3 +66,20 @@ Heuristic sizing of good pairs with hyperparameter = 10, 8 processes and multith
 b'\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82'
 
 b) The tokenizers reflect the information contained in the datasets. As owt is a more general dataset you have more specialized words from many fields. tinystories is geared only towards children stories.
+
+
+
+**Tokenizer_experiments**
+a) Compression ratio on TinyStories/OpenWebText is: / . 
+
+b) Compression on OpenWebText with Tinystories tokenizer reduces the compression to . The vocabulary is not adapted to the source material.
+
+c) Throughput in bytes/sec = . Estimated time spent = 825 * 1024 * 1024 * 1024 / Throughput =  s or roughly 
+
+d) uint16 can store positive values up to 65535, which fits well with the vocabulary sizes we've been targetting. If we wanted to go up to say, 100 000 merges we would have to select a different data type.
+
+
+
+
+
+
