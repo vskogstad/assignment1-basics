@@ -1,7 +1,9 @@
 import json
 import pickle
+import time
 from collections.abc import Iterable, Iterator
 from itertools import chain
+
 import regex as re
 
 
@@ -104,12 +106,24 @@ class Tokenizer:
     
 
     @staticmethod
+    def throughput(filename: str, tokenizer) -> None:
+        with open(filename) as f:
+            text = f.read()
+        bytes_string = len(bytes(text, encoding="utf-8"))
+        t0 = time.time()
+        indices = tokenizer.encode(text)
+        t1 = time.time()
+        throughput = bytes_string / (t1 - t0)
+        print(f"For the {filename} dataset we get {compression_ratio(text, indices)=}")
+        print(f" and {throughput=} bytes/s")
+        return throughput
+
+    @staticmethod
     def compression_ratio(string: str, indices: list[int]) -> float:
         bytes_string = len(bytes(string, encoding="utf-8"))
         bytes_indices = len(indices)
         compression_ratio = bytes_string / bytes_indices
         return compression_ratio
-
     
 
 if __name__ == "__main__":
@@ -131,3 +145,8 @@ if __name__ == "__main__":
     print(enc)
     dec = tokenizer.decode(enc)
     print(dec)
+
+    import sys; sys.exit()
+    # Test throughput
+    throughput(filename="data/sample_owt.txt", tokenizer=tokenizer)
+    throughput(filename="data/sample_tiny.txt", tokenizer=tokenizer)    throughput(filename="data/sample_tiny.txt", tokenizer=tokenizer)
