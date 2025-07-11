@@ -3,7 +3,7 @@ import pstats
 from collections import Counter
 from typing import BinaryIO
 
-from cs336_basics.pretokenization import find_chunk_boundaries, pretokenize_file
+from cs336_basics.pretokenization import pretokenize_file
 
 # Latest: Instead of iterating over the entire candidates dict each time. Keep a best_pairs dictionary with a list of n best pairs. 
 #       When adding new tokens to the vocab, iterate over new tokens and at them to the best_pairs list if they are above the minimum threshold in the list. 
@@ -43,6 +43,7 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str], num_p
         counts, candidates, used_words, best_pairs = update_dictionaries(counts=counts, candidates=candidates, used_words=used_words, bps=best_pairs, token_id=token_id)
         token_id += 1
 
+    # Convert to vocab-format expected in next job
     return vocab, merges
 
 def find_initial_merge_candidates(counts: Counter, vocab: dict) -> tuple[dict[int, tuple], dict[set]]:
@@ -239,7 +240,7 @@ def update_dictionaries(counts: Counter[int], candidates: Counter[int], used_wor
 if __name__ == "__main__":
     
     with cProfile.Profile() as profile:
-        vocab, merges = train_bpe(input_path="data/TinyStoriesV2-GPT4-train.txt", vocab_size=10000, special_tokens=["<|endoftext|>","<|imstart|>"], num_processes=8)#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
+        vocab, merges = train_bpe(input_path="data/TinyStoriesV2-GPT4-valid.txt", vocab_size=10000, special_tokens=["<|endoftext|>","<|imstart|>"], num_processes=8)#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
         
         result = pstats.Stats(profile)
         result.sort_stats(pstats.SortKey.TIME)
@@ -247,6 +248,12 @@ if __name__ == "__main__":
         
         longest_token = max(vocab.values(), key=lambda x: len(x.__repr__()))
         print(longest_token)
+
+        import pickle
+        with open("cs336_basics/vocab-tiny.pkl", "wb") as vocab_file:
+            pickle.dump(vocab, vocab_file)
+        with open("cs336_basics/merges-tiny.pkl", "wb") as merges_file:
+            pickle.dump(merges, merges_file)
         # save data
         import sys; sys.exit()
         import json

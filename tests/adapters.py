@@ -560,7 +560,10 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
+
+    
     from cs336_basics.tokenizer import Tokenizer
+    return Tokenizer(vocab=vocab, merges=merges, special_tokens=special_tokens)
     with cProfile.Profile() as profile:
         tokenizer_a = Tokenizer(vocab=vocab, merges=merges, special_tokens=special_tokens)
 
