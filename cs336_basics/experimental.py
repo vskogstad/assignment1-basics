@@ -71,11 +71,23 @@ def update_counts(counts, new_merge):
     return new_counts
 
 if __name__ == '__main__':
+    # Test if it's I/O bound
+    import time
+
+    # Time just reading the file
+    start = time.time()
+    with open("data/TinyStoriesV2-GPT4-train.txt", 'rb') as f:
+        data = f.read()
+    read_time = time.time() - start
+    print(f"Pure read time: {read_time:.2f}s")
+    print(f"Read speed: {len(data) / read_time / 1024 / 1024:.2f} MB/s")
+    import sys; sys.exit()
+
     with cProfile.Profile() as profile:
         num_merges = 15
         file = "data/minimal.txt"
         counts = pre_tokenize(file_path=file)
-        candidates = find_merge_candidates(counts)
+        candidates = find_merge_candidates(file)
         merges = merge_pairs(candidates, num_merges=num_merges, counts=counts)
         print(merges)
         result = pstats.Stats(profile)
