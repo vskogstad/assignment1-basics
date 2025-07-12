@@ -2,6 +2,7 @@ import json
 import pickle
 import time
 from collections.abc import Iterable, Iterator
+from collections import deque
 from itertools import chain
 
 import regex as re
@@ -10,6 +11,9 @@ import regex as re
 class Tokenizer:
 
     def __init__(self, vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], special_tokens: list[str] | None = None):
+        """
+        Not optimized at all. Trying to get it to work first.
+        """
         self.vocab = vocab
         self.merges = merges
         #print(f" This is before adding anything {vocab[50256]=}")
@@ -26,6 +30,9 @@ class Tokenizer:
 
     @classmethod
     def from_files(cls, vocab_filepath: str, merges_filepath: str, special_tokens: list[str] | None = None):
+        """
+        Only works with .pkl files for now. Serialization of bytes with json is not totally straight forward, might need to import base64.
+        """
         with open("cs336_basics/vocab-tiny.pkl", "rb") as vocab_file:
             vocab = pickle.load(vocab_file)
         with open("cs336_basics/merges-tiny.pkl", "rb") as merges_file:
@@ -34,7 +41,7 @@ class Tokenizer:
         
 
     def encode(self, text: str) -> list[int]:
-
+        
         escaped = [re.escape(token.decode()) for token in self.special_tokens]
         # regex finishes at first match. if we sort by length desc, we will get substrings of longer strings at the end. 
         # matching <|endoftext|><|endoftext|> before <|endoftext|>
@@ -51,13 +58,13 @@ class Tokenizer:
             splitted = text
             #import sys;sys.exit()
         indeces = []
+        # UGLY! 
         for i, chunk in enumerate(splitted):
             segments = []
             for segment in PAT.findall(chunk): 
                 segments.append(segment.encode())
             for segment in segments:
-                # Need this line to work with GPT2-vocab. Can't assume Had to get LLM help for this one.
-
+                # Need this line to work with GPT2-vocab. Can't assume sorted in ascii order. 
                 segment = [self.vocab_to_int[bytes([byte_val])] for byte_val in segment]
                 for best_pair in self.merges:
                     if len(segment) < 2: # No more meges possible
@@ -94,7 +101,44 @@ class Tokenizer:
         return list(chain.from_iterable(indeces))
     
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
-        return NotImplementedError
+        """
+        We are receiving a file object "iterable". We read a chunk from the file and tokenize it. 
+        The EncodingIterator will yield the resulting tokens one by one.
+        """
+        class EncodingIterator:
+            def __init__(self, tokenizer, iterable):
+                self.tokens = deque()
+                self.iterable = iterable
+                self.tokenizer = tokenizer
+                self.chunk_size = 1024*1024
+                self.buffer = ""
+
+            def __iter__(self):
+                return self
+            
+            def __next__(self):
+                if not self.tokens:
+                    chunk = self.buffer + self.iterable.read(self.chunk_size)
+                    # find newline character to split on.
+                    split_point = chunk.rfind("\n")  # searching from right to left in the chunk
+                    if split_point == -1:
+                        print("Did not find a proper split point, splitting at chunk end")
+                        split_point = len(chunk)
+                    self.buffer = chunk[split_point:]
+                    chunk = chunk[:split_point]
+
+                    if not chunk:
+                        if self.buffer:
+                            chunk = self.buffer 
+                            self.buffer = ""
+                        else:
+                            raise StopIteration
+                    self.tokens = deque(self.tokenizer.encode(chunk)) # Reverse even faster?
+
+                return self.tokens.popleft()
+        return EncodingIterator(self, iterable)
+
+
 
     def decode(self, ids: list[int]) -> str:
         
@@ -113,9 +157,9 @@ class Tokenizer:
         t0 = time.time()
         indices = tokenizer.encode(text)
         t1 = time.time()
-        throughput = bytes_string / (t1 - t0)
-        print(f"For the {filename} dataset we get {compression_ratio(text, indices)=}")
-        print(f" and {throughput=} bytes/s")
+        throughput = bytes_string / (t1 - t0) * 1024
+        print(f"For the {filename} dataset we get {Tokenizer.compression_ratio(text, indices)=}")
+        print(f" and {throughput=} bytes/s, {throughput/1024:.2f} MB/s")
         return throughput
 
     @staticmethod
@@ -149,4 +193,4 @@ if __name__ == "__main__":
     import sys; sys.exit()
     # Test throughput
     throughput(filename="data/sample_owt.txt", tokenizer=tokenizer)
-    throughput(filename="data/sample_tiny.txt", tokenizer=tokenizer)    throughput(filename="data/sample_tiny.txt", tokenizer=tokenizer)
+    throughput(filename="data/sample_tiny.txt", tokenizer=tokenizer) 
