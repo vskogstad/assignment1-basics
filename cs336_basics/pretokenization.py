@@ -1,10 +1,14 @@
+import mmap
 import os
+import time
 from collections import Counter
-from multiprocessing import Lock, Pool
+from multiprocessing import Pool
 from typing import BinaryIO
 
 import regex as re
 
+# TODO: Use mmap.mmap on the file in each subprocess and read the file chunkwise.
+#       
 
 def find_chunk_boundaries(
     file: BinaryIO, 
@@ -30,15 +34,12 @@ def find_chunk_boundaries(
     # Chunks start on previous index, don't include last index
     chunk_boundaries = [i * chunk_size for i in range(desired_num_chunks + 1)]
     chunk_boundaries[-1] = file_size
-    
-    chunk_bu_boundaries = chunk_boundaries[:]
-    backup_split_token = ".\n".encode("utf-8")
 
 
     mini_chunk_size = 4096  # Read ahead by 4k bytes at a time
 
     for bi in range(1, len(chunk_boundaries) - 1):
-        no_backup = True
+
         initial_position = chunk_boundaries[bi]
         file.seek(initial_position)  # Start at boundary guess
         while True:
@@ -50,58 +51,93 @@ def find_chunk_boundaries(
                 break
 
             # Find the special token in the mini chunk
-            
             found_at = mini_chunk.find(split_special_token)
             if found_at != -1:
                 chunk_boundaries[bi] = initial_position + found_at
                 break
 
-            # Find a backup breakpoint
-            if no_backup:
-                found_bu = mini_chunk.find(backup_split_token)
-                if found_bu != -1:
-                    chunk_bu_boundaries[bi] = initial_position + found_bu
-                    no_backup = False
-
             initial_position += mini_chunk_size
 
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
-    print(f"{sorted(set(chunk_boundaries))=}, {sorted(set(chunk_bu_boundaries))}")
     return sorted(set(chunk_boundaries))
 
-def split_chunk(filepath, SPECIAL, start, end):
-    print(f"This is process {os.getpid()}")
+
+def convert_to_bytes(counts: Counter[str: int]):
+    bytes_counts = Counter()
+    for word, num in counts.items():
+        bytes_counts[word.encode()] = num
+    return bytes_counts
+
+
+def split_chunk(filepath: str, SPECIAL, PAT, start: int, end: int) -> Counter[tuple[int]: int]: 
+    """Opens filepath and works on a chunk of the file specified by the start" and "end" params.
+    The SPECIAL-pattern is for finding and splitting on special tokens.
+    Maybe working on a shared dictionary would be better to avoid merging at the end? Locking might slow down more than you gain however.
+    """
+    # print(f"This is process {os.getpid()}")
     counts = Counter()
-    PAT = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
-    with open(filepath, "rb") as f:
-        f.seek(start)
-        chunk = f.read(end - start).decode("utf-8", errors="ignore")
-        #lock = Lock()
-        split_special = re.split(SPECIAL, chunk)
-        for document in split_special:
-            for word in PAT.findall(document): # Could potential fail if large and no <|endoftex|>. Use re.finditer() if problematic.
-                counts[tuple(word.encode())] += 1
-                
+    split_bytes = b"<|endoftext|>"
+    with open(filepath, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+    
+        # find starting point in file
+        current_pos = start 
+        mm.seek(start)
+        sub_chunk_size = 8 * 1024 * 1024
+        buffer = b""
+
+        # read one minichunk at a time, using a buffer to search backwards and split on space 
+        while current_pos < end:
+
+            sub_chunk_end = min((current_pos + sub_chunk_size), end) 
+            sub_chunk = buffer + mm[current_pos:sub_chunk_end] # read buffer from last sub_chunk + new sub_chunk 
+            
+            if sub_chunk_end == end: # don't want to search for a split point or create buffer if we reached the final sub_chunk
+                buffer = b""      
+            else:
+                split_point = sub_chunk.rfind(split_bytes)  # searching from right to left in the subchunk
+                if split_point == -1:
+                    print("Did not find a proper split point, splitting at chunk end")
+                    split_point = len(sub_chunk)
+                buffer = sub_chunk[split_point:]
+                sub_chunk = sub_chunk[:split_point]
+
+            text_chunk = sub_chunk.decode("utf-8", errors="ignore")
+            split_special = re.split(SPECIAL, text_chunk)
+            for document in split_special:
+                for word in PAT.findall(document): # Way faster than re.finditer(). Should not be problematic.
+                    counts[word] += 1
+
+            current_pos = sub_chunk_end    
     return counts
 
 def pretokenize_file(filepath: str, num_processes: int, special_tokens: list[str]) -> dict[str, int]:
-    # Preprocessing special tokens 
+    # Preprocessing pattern for special tokens 
     escaped = [re.escape(token) for token in special_tokens]
     SPECIAL = r"|".join(escaped)
-    
+    PAT = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
+
+
+    t0 = time.time()
+
+
     with open(filepath, "rb") as f:
         boundaries = find_chunk_boundaries(
             f, num_processes, "<|endoftext|>".encode("utf-8"))
         
 
     # Multiprocessing
-    p = Pool(num_processes)
-    args = [(filepath, SPECIAL, start, end) for start, end in zip(boundaries[:-1], boundaries[1:])]
-    collected = p.starmap(split_chunk, args)
+
+    with Pool(num_processes) as p:
+        args = [(filepath, SPECIAL, PAT, start, end) for start, end in zip(boundaries[:-1], boundaries[1:])]
+        collected = p.starmap(split_chunk, args)
     
-    # Hopefully temporary code to merge dictionaries from each process
+    # Merge dictionaries from each process
     counts = collected[0]
     for d in collected[1:]:
-        for k, v in d.items():
-            counts[k] = counts.get(k, 0) + v
+        counts.update(d)
+    t1 = time.time()
+    print(f"Used {t1-t0:.2f} secs in multithreaded part")
+    counts = convert_to_bytes(counts)
+    t2 = time.time()
+    print(f"Used {t2-t1:.2f} secs in conversion part")
     return counts
