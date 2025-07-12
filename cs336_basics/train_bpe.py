@@ -61,12 +61,12 @@ def find_initial_merge_candidates(counts: Counter, vocab: dict) -> tuple[dict[in
 
 
 def find_best_pair(candidates: Counter[tuple[int,int]: int], vocab, bps: dict[list[tuple[int, int]], list[tuple[int, int]], int, int]):
-    """Takes unordered dicts of candidates and finds the best pair in linear time"""
+    """Takes unordered dicts of candidates and finds the best pair"""
     
-    if not bps["resort_needed"]: # and bps["max_pairs_sorted"]:
+    if not bps["resort_needed"]: # just return next in line if possible.
         return candidates, bps
     
-    # if the list is empty or max_value in list is lower than limit we sort candidates dict.
+    # Ensure that pairs in good pairs are above limit.
     pairs_under = set()
     if bps["good_pairs"]:
         sort_needed = True
@@ -75,17 +75,18 @@ def find_best_pair(candidates: Counter[tuple[int,int]: int], vocab, bps: dict[li
                 sort_needed = False
                 break
             else:
-                pairs_under.add(pair)
-                
+                pairs_under.add(pair)  
+    # remove pairs that are no longer good
     [bps["good_pairs"].remove(pair) for pair in pairs_under]
-    
+
+    #  if the list of good pairs is empty, we have sort candidates dict  
     if not bps["good_pairs"] or sort_needed:
         print("Finding new good pairs (sorting)")
         # sort by number of occurences first, then "largest" characters in lexicographical order using vocab
         sorted_list = sorted(candidates.items(), key=lambda x: x[1], reverse=True)
     
         # print(sorted_list[:15])
-        candidates = Counter({pair:candidates[pair] for pair, _ in sorted_list}) # Dubious. Sorting for marginally faster sorting next time
+        candidates = Counter({pair:candidates[pair] for pair, _ in sorted_list}) # Dubious. Updating for marginally faster sorting next time
         # print(candidates)
         # iterate from starting 
         # resorting_limit, list of n best pairs
