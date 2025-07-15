@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import cProfile
-import pstats
 import os
+import pstats
 from collections.abc import Iterable
 from typing import IO, Any, BinaryIO
 
@@ -10,7 +10,6 @@ import numpy.typing as npt
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
-
 
 
 def run_linear(
@@ -87,11 +86,17 @@ def run_swiglu(
     # Example:
     # If your state dict keys match, you can use `load_state_dict()`
     # swiglu.load_state_dict(weights)
-    # You can also manually assign the weights
+    # You can also manually assign the weights"weights": w
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    from cs336_basics.model import SWIGLU
+    swiglu = SWIGLU(d_model = d_model, d_ff = d_ff)
+    swiglu.load_state_dict(state_dict= {"w1": w1_weight, "w2": w2_weight, "w3": w3_weight})
+    #swiglu.w1.weight.data = w1_weight
+    #swiglu.w2.weight.data = w2_weight
+    #swiglu.w3.weight.data = w3_weight
+    return swiglu(in_features)
 
 
 def run_scaled_dot_product_attention(
@@ -208,7 +213,9 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    from cs336_basics.model import RoPE
+    roped_tensor = RoPE(theta=theta, d_k=d_k, max_sequence_length=max_seq_len)
+    return roped_tensor(x=in_query_or_key, token_positions=token_positions)
 
 
 def run_transformer_block(
@@ -386,7 +393,11 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    from cs336_basics.model import RMSNorm
+    RMSNorm_layer = RMSNorm(d_model=d_model, eps=eps)
+    RMSNorm_layer.load_state_dict(state_dict= {"weights": weights})
+    return RMSNorm_layer(in_features)
+
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
@@ -400,7 +411,9 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    from cs336_basics.model import SILU
+    SILU_activation = SILU(in_features=in_features)
+    return SILU_activation(in_features)
 
 
 def run_get_batch(
