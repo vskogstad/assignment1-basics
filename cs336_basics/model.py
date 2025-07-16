@@ -61,12 +61,12 @@ class SILU(nn.Module):
 
 class SWIGLU(nn.Module):
 
-    def __init__(self, d_model: int, d_ff: int):
+    def __init__(self, d_model: int, d_ff: int, device: torch.device | None=None, dtype: torch.dtype | None=None):
         super().__init__()
         std = math.sqrt(2 / (d_model + d_ff))
-        self.w1 = nn.Parameter(nn.init.trunc_normal_(tensor=torch.zeros(size = (d_ff, d_model)), mean = 0, std = std, a = -3 * std, b = 3 * std))
-        self.w2 = nn.Parameter(nn.init.trunc_normal_(tensor=torch.zeros(size = (d_model, d_ff)), mean = 0, std = std, a = -3 * std, b = 3 * std))
-        self.w3 = nn.Parameter(nn.init.trunc_normal_(tensor=torch.zeros(size = (d_ff, d_model)), mean = 0, std = std, a = -3 * std, b = 3 * std))
+        self.w1 = nn.Parameter(nn.init.trunc_normal_(tensor=torch.zeros(size = (d_ff, d_model), device=device), mean = 0, std = std, a = -3 * std, b = 3 * std))
+        self.w2 = nn.Parameter(nn.init.trunc_normal_(tensor=torch.zeros(size = (d_model, d_ff), device=device), mean = 0, std = std, a = -3 * std, b = 3 * std))
+        self.w3 = nn.Parameter(nn.init.trunc_normal_(tensor=torch.zeros(size = (d_ff, d_model), device=device), mean = 0, std = std, a = -3 * std, b = 3 * std))
         self.silu = SILU()
 
 
@@ -85,19 +85,52 @@ class SWIGLU(nn.Module):
 class RoPE(nn.Module):
 
     def __init__(self, theta: float, d_k: int, max_sequence_length: int, device: torch.device | None = None):
+        """
+        Pseudocode from original RoPE paper:
+
+        sinusoidal_pos.shape = [1, seq_len, hidden_size] # Sinusoidal position embeddings
+        qw.shape = [batch_size, seq_len, num_heads, hidden_size]  # query hiddens
+        kw.shape = [batch_size, seq_len, num_heads, hidden_size]  # key hiddens
+
+        cos_pos = repeat_elements(sinusoidal_pos[..., None, 1::2], rep=2, axis=-1)
+        sin_pos = repeat_elements(sinusoidal_pos[..., None, ::2], rep=2, axis=-1)
+        qw2 = stack([-qw[..., 1::2], qw[..., ::2]], 4)
+        qw2 = reshape(qw2, shape(qw))
+        qw = qw * cos_pos + qw2 * sin_pos
+        kw2 = K.stack([-kw[..., 1::2], kw[..., ::2]], 4)
+        kw2 = K.reshape(kw2, K.shape(kw))
+        kw = kw * cos_pos + kw2 * sin_pos
+
+        # Attention
+        a = tf.einsum('bjhd,bkhd->bhjk', qw, kw)"""
         self.theta = theta
         self.d_k = d_k
 
         # Implement an R-matrix that can be reused for various calculations of RoPE.
-
+        
         self.register_buffer(name="R_mat", 
-                             tensor=torch.zeros(max_sequence_length), 
+                             tensor=torch.cos(max_sequence_length), 
                              persistent=False)
 
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
         
         return x
+
+@staticmethod
+def softmax(x: torch.Tensor, dimension: int):
+    max_x = torch.max(x[dimension])
+    result = torch.exp(x-max_x) / torch.sum(torch.exp(x-max_x), dim=dimension, keepdim=True)
+    return result
+
+@staticmethod
+def scaled_dot_product_attention(Q, K, V, mask):
+    batch_size, *args, sequence_length, d_k = Q.shape
+    print(f"{Q.shape=}  {K.shape=} | {V.shape=}")
+    
+    attn = einsum(Q, K, "b ... sq d_k, b ... sk d_k -> b ... sq sk") / math.sqrt(d_k)
+    result = einsum(softmax(x=attn, dimension=-1), V, "b ... sk, b ... sk d_v -> b ... d_v")
+    return result
 
 if __name__ == "__main__":
     a = Linear(2, 3)
