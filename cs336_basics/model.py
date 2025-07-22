@@ -116,6 +116,51 @@ class RoPE(nn.Module):
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
         
         return x
+'''
+class Head(nn.Module):
+
+    def __init__(self, head_size, dim):
+        super().__init__()
+
+
+    def forward(x: torch.tensor):
+        return scaled_dot_product_attention(self.Q, self.K, self.V, mask="tril")
+'''
+
+class MultiHeadAttention(nn.Module):
+
+    def __init__(self, d_model: int, num_heads: int, dtype: torch.dtype | None=None, device: torch.device | None=None):
+        super().__init__()
+        self.num_heads = num_heads
+        assert d_model % num_heads == 0
+        self.d_k = self.d_v = int(d_model/num_heads)
+        #head_size = int(d_model/num_heads)
+        self.Wq = Linear(num_heads * self.d_k, d_model)
+        self.Wk = Linear(num_heads * self.d_k, d_model)
+        self.Wv = Linear(num_heads * self.d_v, d_model) 
+        self.Wo = Linear(d_model, num_heads * self.d_v) 
+        #self.heads = [Head(head_size=head_size, dim=d_k for _ in range(num_heads)]
+        #self.register_buffer(name="tril", tensor=torch.tril(torch.ones((d_model,d_model))))
+        self.tril =torch.tril(torch.ones((d_model,d_model)))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        mha = []
+        Q = self.Wq(x)
+        K = self.Wk(x)
+        V = self.Wv(x)
+        for i in range(self.num_heads):
+            start = i * self.d_k
+            end = (i + 1) * self.d_k
+            
+            Qi, Ki, Vi = Q[:,:,start:end], K[:,:,start:end], V[:,:,start:end]
+            print(Qi.shape)
+            # import sys; sys.exit()
+            mha.append(scaled_dot_product_attention(Qi, Ki, Vi, mask=self.tril))
+            
+        mha = torch.cat(tuple(mha), -1)
+        # mha = scaled_dot_product_attention(self.Wq(x), self.Wk(x), self.Wv(x), mask=self.tril)
+        return self.Wo(mha)
+
 
 @staticmethod
 def softmax(x: torch.Tensor, dimension: int):
@@ -125,11 +170,15 @@ def softmax(x: torch.Tensor, dimension: int):
 
 @staticmethod
 def scaled_dot_product_attention(Q, K, V, mask):
-    batch_size, *args, sequence_length, d_k = Q.shape
-    print(f"{Q.shape=}  {K.shape=} | {V.shape=}")
-    
+    d_k = Q.shape[-1]
+    seq_len = Q.shape[-2]
+    # print(f"{Q.shape=}  {K.shape=} | {V.shape=}")
+    # Q^T K / sqrt(d_k)
     attn = einsum(Q, K, "b ... sq d_k, b ... sk d_k -> b ... sq sk") / math.sqrt(d_k)
-    result = einsum(softmax(x=attn, dimension=-1), V, "b ... sk, b ... sk d_v -> b ... d_v")
+    # apply mask if included
+    if mask is not None:
+        attn = attn.masked_fill(mask[:seq_len,:seq_len]==False, float("-inf"))
+    result = einsum(softmax(x=attn, dimension=-1), V, "b ... sq sk, b ... sk d_v -> b ... sq d_v")
     return result
 
 if __name__ == "__main__":
