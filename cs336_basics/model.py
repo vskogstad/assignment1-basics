@@ -130,6 +130,7 @@ class Head(nn.Module):
 class MultiHeadAttention(nn.Module):
 
     def __init__(self, d_model: int, num_heads: int, dtype: torch.dtype | None=None, device: torch.device | None=None):
+        
         super().__init__()
         self.num_heads = num_heads
         assert d_model % num_heads == 0
@@ -141,24 +142,18 @@ class MultiHeadAttention(nn.Module):
         self.Wo = Linear(d_model, num_heads * self.d_v) 
         #self.heads = [Head(head_size=head_size, dim=d_k for _ in range(num_heads)]
         #self.register_buffer(name="tril", tensor=torch.tril(torch.ones((d_model,d_model))))
-        self.tril =torch.tril(torch.ones((d_model,d_model)))
+        self.tril = torch.tril(torch.ones((d_model,d_model), device=device))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        mha = []
-        Q = self.Wq(x)
-        K = self.Wk(x)
-        V = self.Wv(x)
-        for i in range(self.num_heads):
-            start = i * self.d_k
-            end = (i + 1) * self.d_k
-            
-            Qi, Ki, Vi = Q[:,:,start:end], K[:,:,start:end], V[:,:,start:end]
-            print(Qi.shape)
-            # import sys; sys.exit()
-            mha.append(scaled_dot_product_attention(Qi, Ki, Vi, mask=self.tril))
-            
-        mha = torch.cat(tuple(mha), -1)
-        # mha = scaled_dot_product_attention(self.Wq(x), self.Wk(x), self.Wv(x), mask=self.tril)
+        # We split the embedding dimension into an additional batch dimension (heads)
+        Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k = self.d_k)
+        K = rearrange(self.Wk(x), "b s (head d_k) -> b head s d_k", d_k = self.d_k)
+        V = rearrange(self.Wv(x), "b s (head d_v) -> b head s d_v", d_v = self.d_v)
+
+        mha = scaled_dot_product_attention(Q, K, V, mask=self.tril)
+        # rearrenge back into original embedding dimension
+        mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
+        #import sys; sys.exit()
         return self.Wo(mha)
 
 
