@@ -87,10 +87,13 @@ class Block(nn.Module):
     def __init__(self, d_model: int, num_heads: int, d_ff: int, max_sequence_length: int | None=None, theta:int | None=None, device: torch.device | None=None, dtype: torch.dtype | None=None):
         super().__init__()
         self.mha = MultiHeadAttention(d_model=d_model, num_heads=num_heads, max_sequence_length=max_sequence_length, theta=theta)
-        self.rmsn = RMSNorm(d_model=d_model, eps=1e-5, device=device)
+        self.rmsn1 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
+        self.ffn = SWIGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
+        self.rmsn2 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
 
     def forward(self, x: torch.Tensor):
-        x = x + self.mha(self.rmsn(x))
+        x = x + self.mha(self.rmsn1(x)) # Attention
+        x = x + self.ffn(self.rmsn2(x))
         return x
 
 
