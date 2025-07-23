@@ -301,7 +301,11 @@ def run_transformer_block(
                                         "mha.Wk.W": weights["attn.k_proj.weight"], 
                                         "mha.Wv.W": weights["attn.v_proj.weight"], 
                                         "mha.Wo.W": weights["attn.output_proj.weight"],
-                                        "rmsn.weights": weights})
+                                        "rmsn1.weights": weights["ln1.weight"],
+                                        "rmsn2.weights": weights["ln2.weight"],
+                                        "ffn.w1": weights["ffn.w1.weight"],
+                                        "ffn.w2": weights["ffn.w2.weight"],
+                                        "ffn.w3": weights["ffn.w3.weight"],})
     """
             - `attn.output_proj.weight`
                 Weight of the multi-head self-attention output projection
