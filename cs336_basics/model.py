@@ -86,36 +86,50 @@ class RoPE(nn.Module):
 
     def __init__(self, theta: float, d_k: int, max_sequence_length: int, device: torch.device | None = None):
         """
-        Pseudocode from original RoPE paper:
+        This code is basically a rewrite of huggingface transformers mixed with papers with code, using the neoX rotate half method (rotating half of the x's instead of changing signs of half of the sinusoidal functions):
 
-        sinusoidal_pos.shape = [1, seq_len, hidden_size] # Sinusoidal position embeddings
-        qw.shape = [batch_size, seq_len, num_heads, hidden_size]  # query hiddens
-        kw.shape = [batch_size, seq_len, num_heads, hidden_size]  # key hiddens
+        Rotate half gives us the third term shown below:
 
-        cos_pos = repeat_elements(sinusoidal_pos[..., None, 1::2], rep=2, axis=-1)
-        sin_pos = repeat_elements(sinusoidal_pos[..., None, ::2], rep=2, axis=-1)
-        qw2 = stack([-qw[..., 1::2], qw[..., ::2]], 4)
-        qw2 = reshape(qw2, shape(qw))
-        qw = qw * cos_pos + qw2 * sin_pos
-        kw2 = K.stack([-kw[..., 1::2], kw[..., ::2]], 4)
-        kw2 = K.reshape(kw2, K.shape(kw))
-        kw = kw * cos_pos + kw2 * sin_pos
+        x1     cos(mØ_1)       -x2     sin(mØ_1)
+        x2     cos(mØ_1)        x1     sin(mØ_1)
+        x3 (x) cos(mØ_1)   +   -x4 (x) sin(mØ_1)
+        .           ..           .          ... 
 
-        # Attention
-        a = tf.einsum('bjhd,bkhd->bhjk', qw, kw)"""
-        self.theta = theta
+        """
+
+        super().__init__()
+        self.base = theta
         self.d_k = d_k
+        freq = 1. / (self.base**(2*torch.arange(0, self.d_k/2.0).float()/(self.d_k))).to(device) 
+        print(f"{d_k=}, {theta=}, {freq=}")
+        position = torch.arange(max_sequence_length).to(device)
+        pos_freq = torch.einsum("m,f -> mf", position, freq) # product of m and theta
+        pos_freq2 = torch.cat([pos_freq, pos_freq], dim=1)
+        print(f"{d_k=}, {theta=}, {freq=}, {pos_freq=}")
+        print(pos_freq2.shape)
+        print(pos_freq.shape)
 
-        # Implement an R-matrix that can be reused for various calculations of RoPE.
-        
-        self.register_buffer(name="R_mat", 
-                             tensor=torch.cos(max_sequence_length), 
+        self.register_buffer(name="cos", 
+                             tensor=pos_freq2.cos(), 
                              persistent=False)
-
+        self.register_buffer(name="sin", 
+                             tensor=pos_freq2.sin(), 
+                             persistent=False)
+        
+    def rotate_half(self, x: torch.Tensor) -> torch.Tensor:
+            """Returns transformed x [-x2, x1, -x4, x3, ....]"""
+            x1 = x[..., : x.shape[-1] // 2]
+            x2 = x[..., x.shape[-1] // 2 :]
+            return torch.cat((-x2, x1), dim=-1)
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
-        
-        return x
+        """
+        kw = kw * cos_pos + kw2 * sin_pos"""
+        print(f"{x.shape=}")
+        print(f"{self.cos[token_positions].shape=}")
+        x_rope = (x * self.cos[token_positions]) + (self.rotate_half(x) * self.sin[token_positions])
+        print(f"{x_rope.shape=}")
+        return x_rope
 '''
 class Head(nn.Module):
 
