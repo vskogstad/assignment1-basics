@@ -83,52 +83,68 @@ class SWIGLU(nn.Module):
         return x
     
 class RoPE(nn.Module):
-
     def __init__(self, theta: float, d_k: int, max_sequence_length: int, device: torch.device | None = None):
         """
-        This code is basically a rewrite of huggingface transformers mixed with papers with code, using the neoX rotate half method (rotating half of the x's instead of changing signs of half of the sinusoidal functions):
-
-        Rotate half gives us the third term shown below:
-
-        x1     cos(mØ_1)       -x2     sin(mØ_1)
-        x2     cos(mØ_1)        x1     sin(mØ_1)
-        x3 (x) cos(mØ_1)   +   -x4 (x) sin(mØ_1)
-        .           ..           .          ... 
-
+        Interleaved RoPE implementation - treats consecutive pairs as complex numbers
+        This matches the mathematical approach expected by tests but is utterly incomprehensible for me.
         """
-
         super().__init__()
         self.base = theta
         self.d_k = d_k
-        freq = 1. / (self.base**(2*torch.arange(0, self.d_k/2.0).float()/(self.d_k))).to(device) 
-        print(f"{d_k=}, {theta=}, {freq=}")
-        position = torch.arange(max_sequence_length).to(device)
-        pos_freq = torch.einsum("m,f -> mf", position, freq) # product of m and theta
-        pos_freq2 = torch.cat([pos_freq, pos_freq], dim=1)
-        print(f"{d_k=}, {theta=}, {freq=}, {pos_freq=}")
-        print(pos_freq2.shape)
-        print(pos_freq.shape)
-
-        self.register_buffer(name="cos", 
-                             tensor=pos_freq2.cos(), 
-                             persistent=False)
-        self.register_buffer(name="sin", 
-                             tensor=pos_freq2.sin(), 
-                             persistent=False)
         
+        freq = 1. / (self.base**(2*torch.arange(0, self.d_k/2.0).float()/(self.d_k))).to(device)
+        position = torch.arange(max_sequence_length).to(device)
+        
+        # Create position-frequency matrix [max_seq_len, d_k/2]
+        pos_freq = torch.einsum("m,f -> mf", position, freq)
+        
+        # For interleaved approach: repeat each frequency for consecutive pairs
+        # [freq0, freq0, freq1, freq1, freq2, freq2, ...] 
+        pos_freq_interleaved = torch.zeros(max_sequence_length, d_k, device=device)
+        pos_freq_interleaved[:, 0::2] = pos_freq  # Even indices: 0, 2, 4, ...
+        pos_freq_interleaved[:, 1::2] = pos_freq  # Odd indices: 1, 3, 5, ...
+        
+        #print(f"{d_k=}, {theta=}, {freq=}, {pos_freq=}")
+        
+        # Register cos and sin buffers
+        self.register_buffer(name="cos", tensor=pos_freq_interleaved.cos(), persistent=False)
+        self.register_buffer(name="sin", tensor=pos_freq_interleaved.sin(), persistent=False)
+
     def rotate_half(self, x: torch.Tensor) -> torch.Tensor:
-            """Returns transformed x [-x2, x1, -x4, x3, ....]"""
-            x1 = x[..., : x.shape[-1] // 2]
-            x2 = x[..., x.shape[-1] // 2 :]
-            return torch.cat((-x2, x1), dim=-1)
+        """
+        Except for comments, this is all Claude/Meta unfortuneately. I implemeted the transformer-version of Neox-RoPE, but that fails the test. 
+        
+        Interleaved rotation: (-x2, x1, -x4, x3, -x6, x5, ...)
+        This treats consecutive pairs as complex numbers: (x1, x2) -> (-x2, x1)
+        
+        """
+        # Reshape to treat consecutive elements as pairs
+        # This line splits the last dimension into pairs, *.shape[:-1] simply keeps the first dimensions as they are
+        x_pairs = x.view(*x.shape[:-1], -1, 2)  # [..., d_k/2, 2]
+        x1, x2 = x_pairs.unbind(dim=-1)  # Split along final dimension creating x1 = [1, 3, 5 ...] and x2 = [2, 4, 6 ...]
+        
+        # Rotate: (x1, x2) -> (-x2, x1)
+        rotated_pairs = torch.stack((-x2, x1), dim=-1)  # [..., d_k/2, 2]
+        
+        # Reshape back to original shape
+        return rotated_pairs.view(*x.shape)
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
         """
-        kw = kw * cos_pos + kw2 * sin_pos"""
-        print(f"{x.shape=}")
-        print(f"{self.cos[token_positions].shape=}")
-        x_rope = (x * self.cos[token_positions]) + (self.rotate_half(x) * self.sin[token_positions])
-        print(f"{x_rope.shape=}")
+        Apply RoPE with interleaved rotation approach
+        """
+        #print(f"{x.shape=}")
+        
+        # Get cos and sin values for the specified positions
+        cos_pos = self.cos[token_positions]  # [seq_len, d_k]
+        sin_pos = self.sin[token_positions]  # [seq_len, d_k]
+        
+        #print(f"{cos_pos.shape=}")
+        
+        # Apply RoPE: x * cos + rotate_half(x) * sin
+        x_rope = (x * cos_pos) + (self.rotate_half(x) * sin_pos)
+        
+        #print(f"{x_rope.shape=}")
         return x_rope
 '''
 class Head(nn.Module):
@@ -170,6 +186,42 @@ class MultiHeadAttention(nn.Module):
         #import sys; sys.exit()
         return self.Wo(mha)
 
+class MultiHeadAttention2(nn.Module):
+
+    def __init__(self, d_model: int, num_heads: int, max_sequence_length: int, theta: float | None=None, dtype: torch.dtype | None=None, device: torch.device | None=None):
+        
+        super().__init__()
+        self.num_heads = num_heads
+        assert d_model % num_heads == 0
+        self.d_k = self.d_v = int(d_model/num_heads)
+        #head_size = int(d_model/num_heads)
+        self.Wq = Linear(num_heads * self.d_k, d_model)
+        self.Wk = Linear(num_heads * self.d_k, d_model)
+        self.Wv = Linear(num_heads * self.d_v, d_model) 
+        self.Wo = Linear(d_model, num_heads * self.d_v) 
+        #self.heads = [Head(head_size=head_size, dim=d_k for _ in range(num_heads)]
+        #self.register_buffer(name="tril", tensor=torch.tril(torch.ones((d_model,d_model))))
+        self.tril = torch.tril(torch.ones((d_model,d_model), device=device))
+        if theta is not None:
+            self.rope = RoPE(theta=theta, d_k=self.d_k, max_sequence_length=max_sequence_length, device=device)
+        else:
+            self.rope = None
+
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None=None) -> torch.Tensor:
+        # We split the embedding dimension into an additional batch dimension (heads)
+        Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k = self.d_k)
+        K = rearrange(self.Wk(x), "b s (head d_k) -> b head s d_k", d_k = self.d_k)
+        V = rearrange(self.Wv(x), "b s (head d_v) -> b head s d_v", d_v = self.d_v)
+        if self.rope != None and token_positions != None: # We are using RoPE
+            Q = self.rope(Q, token_positions)
+            K = self.rope(K, token_positions)
+
+        mha = scaled_dot_product_attention(Q, K, V, mask=self.tril)
+        # rearrenge back into original embedding dimension
+        mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
+        #import sys; sys.exit()
+        return self.Wo(mha)
+
 
 @staticmethod
 def softmax(x: torch.Tensor, dimension: int):
@@ -191,6 +243,7 @@ def scaled_dot_product_attention(Q, K, V, mask):
     return result
 
 if __name__ == "__main__":
+
     a = Linear(2, 3)
     print(a.state_dict)
     x = torch.ones((4,3))
