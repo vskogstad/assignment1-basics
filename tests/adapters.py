@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import cProfile
-import pstats
 import os
+import pstats
 from collections.abc import Iterable
 from typing import IO, Any, BinaryIO
 
@@ -10,7 +10,6 @@ import numpy.typing as npt
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
-
 
 
 def run_linear(
@@ -32,8 +31,10 @@ def run_linear(
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
 
-    raise NotImplementedError
-
+    from cs336_basics.model import Linear
+    linear_layer = Linear(in_features=d_in, out_features=d_out)
+    linear_layer.load_state_dict(state_dict= {"W": weights})
+    return linear_layer(in_features)
 
 def run_embedding(
     vocab_size: int,
@@ -54,7 +55,10 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
 
-    raise NotImplementedError
+    from cs336_basics.model import Embedding
+    embedding_layer = Embedding(num_embeddings=vocab_size, embeddings_dim=d_model)
+    embedding_layer.load_state_dict(state_dict= {"embedding": weights})
+    return embedding_layer(token_ids)
 
 
 def run_swiglu(
@@ -82,11 +86,17 @@ def run_swiglu(
     # Example:
     # If your state dict keys match, you can use `load_state_dict()`
     # swiglu.load_state_dict(weights)
-    # You can also manually assign the weights
+    # You can also manually assign the weights"weights": w
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    from cs336_basics.model import SWIGLU
+    swiglu = SWIGLU(d_model = d_model, d_ff = d_ff)
+    swiglu.load_state_dict(state_dict= {"w1": w1_weight, "w2": w2_weight, "w3": w3_weight})
+    #swiglu.w1.weight.data = w1_weight
+    #swiglu.w2.weight.data = w2_weight
+    #swiglu.w3.weight.data = w3_weight
+    return swiglu(in_features)
 
 
 def run_scaled_dot_product_attention(
@@ -107,7 +117,8 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    raise NotImplementedError
+    from cs336_basics.model import scaled_dot_product_attention
+    return scaled_dot_product_attention(Q=Q, K=K, V=V, mask=mask)
 
 
 def run_multihead_self_attention(
@@ -141,7 +152,10 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    from cs336_basics.model import MultiHeadAttention
+    mha = MultiHeadAttention(d_model=d_model, num_heads=num_heads )
+    mha.load_state_dict(state_dict = {"Wq.W": q_proj_weight, "Wk.W": k_proj_weight, "Wv.W": v_proj_weight, "Wo.W": o_proj_weight})
+    return mha(in_features)
 
 
 def run_multihead_self_attention_with_rope(
@@ -203,7 +217,9 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    from cs336_basics.model import RoPE
+    roped_tensor = RoPE(theta=theta, d_k=d_k, max_sequence_length=max_seq_len)
+    return roped_tensor(x=in_query_or_key, token_positions=token_positions)
 
 
 def run_transformer_block(
@@ -381,7 +397,11 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    from cs336_basics.model import RMSNorm
+    RMSNorm_layer = RMSNorm(d_model=d_model, eps=eps)
+    RMSNorm_layer.load_state_dict(state_dict= {"weights": weights})
+    return RMSNorm_layer(in_features)
+
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
@@ -395,7 +415,9 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    from cs336_basics.model import SILU
+    SILU_activation = SILU(in_features=in_features)
+    return SILU_activation(in_features)
 
 
 def run_get_batch(
@@ -434,7 +456,8 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
+    from cs336_basics.model import softmax
+    return softmax(in_features, dim)
 
 
 def run_cross_entropy(inputs: Float[Tensor, " batch_size vocab_size"], targets: Int[Tensor, " batch_size"]) -> Float[Tensor, ""]:
