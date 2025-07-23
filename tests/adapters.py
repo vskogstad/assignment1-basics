@@ -153,7 +153,7 @@ def run_multihead_self_attention(
         implementation with the given QKV projection weights and input features.
     """
     from cs336_basics.model import MultiHeadAttention
-    mha = MultiHeadAttention(d_model=d_model, num_heads=num_heads )
+    mha = MultiHeadAttention(d_model=d_model, num_heads=num_heads)
     mha.load_state_dict(state_dict = {"Wq.W": q_proj_weight, "Wk.W": k_proj_weight, "Wv.W": v_proj_weight, "Wo.W": o_proj_weight})
     return mha(in_features)
 
@@ -195,8 +195,8 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    from cs336_basics.model import MultiHeadAttention2
-    mha = MultiHeadAttention2(d_model=d_model, num_heads=num_heads, max_sequence_length=max_seq_len, theta=theta)
+    from cs336_basics.model import MultiHeadAttention
+    mha = MultiHeadAttention(d_model=d_model, num_heads=num_heads, max_sequence_length=max_seq_len, theta=theta)
     mha.load_state_dict(state_dict = {"Wq.W": q_proj_weight, "Wk.W": k_proj_weight, "Wv.W": v_proj_weight, "Wo.W": o_proj_weight})
     return mha(in_features, token_positions)
 
@@ -294,8 +294,36 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
-
+    from cs336_basics.model import Block
+    block = Block(d_model=d_model, num_heads = num_heads, d_ff=d_ff, max_sequence_length=max_seq_len, theta=theta)
+    print(f"{weights.keys()=}")
+    block.load_state_dict(state_dict = {"mha.Wq.W": weights["attn.q_proj.weight"], 
+                                        "mha.Wk.W": weights["attn.k_proj.weight"], 
+                                        "mha.Wv.W": weights["attn.v_proj.weight"], 
+                                        "mha.Wo.W": weights["attn.output_proj.weight"],
+                                        "rmsn.weights": weights})
+    """
+            - `attn.output_proj.weight`
+                Weight of the multi-head self-attention output projection
+                Shape is (d_model, d_model).
+            - `ln1.weight`
+                Weights of affine transform for the first RMSNorm
+                applied in the transformer block.
+                Shape is (d_model,).
+            - `ffn.w1.weight`
+                Weight of the first linear transformation in the FFN.
+                Shape is (d_model, d_ff).
+            - `ffn.w2.weight`
+                Weight of the second linear transformation in the FFN.
+                Shape is (d_ff, d_model).
+            - `ffn.w3.weight`
+                Weight of the third linear transformation in the FFN.
+                Shape is (d_model, d_ff).
+            - `ln2.weight`
+                Weights of affine transform for the second RMSNorm
+                applied in the transformer block.
+                Shape is (d_model,)."""
+    return block(in_features)
 
 def run_transformer_lm(
     vocab_size: int,

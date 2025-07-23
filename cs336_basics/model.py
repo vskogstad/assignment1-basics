@@ -81,7 +81,19 @@ class SWIGLU(nn.Module):
         # project by to normal dimensions
         x = einsum(self.w2, hidden, "d_model d_ff, b s d_ff -> b s d_model")
         return x
-    
+
+class Block(nn.Module):
+
+    def __init__(self, d_model: int, num_heads: int, d_ff: int, max_sequence_length: int | None=None, theta:int | None=None, device: torch.device | None=None, dtype: torch.dtype | None=None):
+        super().__init__()
+        self.mha = MultiHeadAttention(d_model=d_model, num_heads=num_heads, max_sequence_length=max_sequence_length, theta=theta)
+        self.rmsn = RMSNorm(d_model=d_model, eps=1e-5, device=device)
+
+    def forward(self, x: torch.Tensor):
+        x = x + self.mha(self.rmsn(x))
+        return x
+
+
 class RoPE(nn.Module):
     def __init__(self, theta: float, d_k: int, max_sequence_length: int, device: torch.device | None = None):
         """
@@ -157,48 +169,20 @@ class Head(nn.Module):
         return scaled_dot_product_attention(self.Q, self.K, self.V, mask="tril")
 '''
 
+
 class MultiHeadAttention(nn.Module):
 
-    def __init__(self, d_model: int, num_heads: int, dtype: torch.dtype | None=None, device: torch.device | None=None):
+    def __init__(self, d_model: int, num_heads: int, max_sequence_length: int | None=None, theta: float | None=None, dtype: torch.dtype | None=None, device: torch.device | None=None):
         
         super().__init__()
         self.num_heads = num_heads
         assert d_model % num_heads == 0
         self.d_k = self.d_v = int(d_model/num_heads)
         #head_size = int(d_model/num_heads)
-        self.Wq = Linear(num_heads * self.d_k, d_model)
-        self.Wk = Linear(num_heads * self.d_k, d_model)
-        self.Wv = Linear(num_heads * self.d_v, d_model) 
-        self.Wo = Linear(d_model, num_heads * self.d_v) 
-        #self.heads = [Head(head_size=head_size, dim=d_k for _ in range(num_heads)]
-        #self.register_buffer(name="tril", tensor=torch.tril(torch.ones((d_model,d_model))))
-        self.tril = torch.tril(torch.ones((d_model,d_model), device=device))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # We split the embedding dimension into an additional batch dimension (heads)
-        Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k = self.d_k)
-        K = rearrange(self.Wk(x), "b s (head d_k) -> b head s d_k", d_k = self.d_k)
-        V = rearrange(self.Wv(x), "b s (head d_v) -> b head s d_v", d_v = self.d_v)
-
-        mha = scaled_dot_product_attention(Q, K, V, mask=self.tril)
-        # rearrenge back into original embedding dimension
-        mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
-        #import sys; sys.exit()
-        return self.Wo(mha)
-
-class MultiHeadAttention2(nn.Module):
-
-    def __init__(self, d_model: int, num_heads: int, max_sequence_length: int, theta: float | None=None, dtype: torch.dtype | None=None, device: torch.device | None=None):
-        
-        super().__init__()
-        self.num_heads = num_heads
-        assert d_model % num_heads == 0
-        self.d_k = self.d_v = int(d_model/num_heads)
-        #head_size = int(d_model/num_heads)
-        self.Wq = Linear(num_heads * self.d_k, d_model)
-        self.Wk = Linear(num_heads * self.d_k, d_model)
-        self.Wv = Linear(num_heads * self.d_v, d_model) 
-        self.Wo = Linear(d_model, num_heads * self.d_v) 
+        self.Wq = Linear(num_heads * self.d_k, d_model, device=device, dtype=dtype)
+        self.Wk = Linear(num_heads * self.d_k, d_model, device=device, dtype=dtype)
+        self.Wv = Linear(num_heads * self.d_v, d_model, device=device, dtype=dtype) 
+        self.Wo = Linear(d_model, num_heads * self.d_v, device=device, dtype=dtype) 
         #self.heads = [Head(head_size=head_size, dim=d_k for _ in range(num_heads)]
         #self.register_buffer(name="tril", tensor=torch.tril(torch.ones((d_model,d_model))))
         self.tril = torch.tril(torch.ones((d_model,d_model), device=device))
