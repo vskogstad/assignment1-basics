@@ -78,8 +78,21 @@ c) Throughput in bytes/s = . Estimated time spent = 825 * 1024 * 1024 * 1024 (by
 
 d) uint16 can store positive values up to 65535, which fits well with the vocabulary sizes we've been targetting. If we wanted to go up to say, 100 000 merges we would have to select a different data type.
 
+**Resource accounting model**
 
 
 
+**Tuning the learning rate**
+Results after 10 iterations:
+Loss with lr 1e1 = 3.07
+Loss with lr 1e2 = 4.16e-23
+Loss with lr 1e3 = 2.06e+19
+A learning rate of 1e1 is already quite agressive and gives rapid convergence towards 0. If we increase lr by a factor of 10 to 1e2 loss will decrease faster and if we increase lr by a factor of 100 the loss diverges.
+
+**Resource accounting AdamW**
 
 
+
+**Final optimizations**
+Shared embedding matrix in/out
+Muon optimizer
