@@ -296,7 +296,7 @@ def run_transformer_block(
     """
     from cs336_basics.model import Block
     block = Block(d_model=d_model, num_heads = num_heads, d_ff=d_ff, max_sequence_length=max_seq_len, theta=theta)
-    print(f"{weights.keys()=}")
+    #print(f"{weights.keys()=}")
     block.load_state_dict(state_dict = {"mha.Wq.W": weights["attn.q_proj.weight"], 
                                         "mha.Wk.W": weights["attn.k_proj.weight"], 
                                         "mha.Wv.W": weights["attn.v_proj.weight"], 
@@ -306,27 +306,6 @@ def run_transformer_block(
                                         "ffn.w1": weights["ffn.w1.weight"],
                                         "ffn.w2": weights["ffn.w2.weight"],
                                         "ffn.w3": weights["ffn.w3.weight"],})
-    """
-            - `attn.output_proj.weight`
-                Weight of the multi-head self-attention output projection
-                Shape is (d_model, d_model).
-            - `ln1.weight`
-                Weights of affine transform for the first RMSNorm
-                applied in the transformer block.
-                Shape is (d_model,).
-            - `ffn.w1.weight`
-                Weight of the first linear transformation in the FFN.
-                Shape is (d_model, d_ff).
-            - `ffn.w2.weight`
-                Weight of the second linear transformation in the FFN.
-                Shape is (d_ff, d_model).
-            - `ffn.w3.weight`
-                Weight of the third linear transformation in the FFN.
-                Shape is (d_model, d_ff).
-            - `ln2.weight`
-                Weights of affine transform for the second RMSNorm
-                applied in the transformer block.
-                Shape is (d_model,)."""
     return block(in_features)
 
 def run_transformer_lm(
@@ -408,7 +387,43 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    from cs336_basics.model import Transformer
+    transformer = Transformer(vocab_size=vocab_size, num_layers=num_layers, d_model=d_model, num_heads = num_heads, d_ff=d_ff, context_length=context_length, theta=rope_theta, )
+    #print(f"{weights.keys()=}")
+    transformer.load_state_dict(state_dict = {"embedding.embedding": weights["token_embeddings.weight"],
+                                        
+                                        "layers.0.mha.Wq.W": weights["layers.0.attn.q_proj.weight"], 
+                                        "layers.0.mha.Wk.W": weights["layers.0.attn.k_proj.weight"], 
+                                        "layers.0.mha.Wv.W": weights["layers.0.attn.v_proj.weight"], 
+                                        "layers.0.mha.Wo.W": weights["layers.0.attn.output_proj.weight"],
+                                        "layers.0.rmsn1.weights": weights["layers.0.ln1.weight"],
+                                        "layers.0.rmsn2.weights": weights["layers.0.ln2.weight"],
+                                        "layers.0.ffn.w1": weights["layers.0.ffn.w1.weight"],
+                                        "layers.0.ffn.w2": weights["layers.0.ffn.w2.weight"],
+                                        "layers.0.ffn.w3": weights["layers.0.ffn.w3.weight"],
+                                        "layers.1.mha.Wq.W": weights["layers.1.attn.q_proj.weight"], 
+                                        "layers.1.mha.Wk.W": weights["layers.1.attn.k_proj.weight"], 
+                                        "layers.1.mha.Wv.W": weights["layers.1.attn.v_proj.weight"], 
+                                        "layers.1.mha.Wo.W": weights["layers.1.attn.output_proj.weight"],
+                                        "layers.1.rmsn1.weights": weights["layers.1.ln1.weight"],
+                                        "layers.1.rmsn2.weights": weights["layers.1.ln2.weight"],
+                                        "layers.1.ffn.w1": weights["layers.1.ffn.w1.weight"],
+                                        "layers.1.ffn.w2": weights["layers.1.ffn.w2.weight"],
+                                        "layers.1.ffn.w3": weights["layers.1.ffn.w3.weight"],
+
+                                        "layers.2.mha.Wq.W": weights["layers.2.attn.q_proj.weight"], 
+                                        "layers.2.mha.Wk.W": weights["layers.2.attn.k_proj.weight"], 
+                                        "layers.2.mha.Wv.W": weights["layers.2.attn.v_proj.weight"], 
+                                        "layers.2.mha.Wo.W": weights["layers.2.attn.output_proj.weight"],
+                                        "layers.2.rmsn1.weights": weights["layers.2.ln1.weight"],
+                                        "layers.2.rmsn2.weights": weights["layers.2.ln2.weight"],
+                                        "layers.2.ffn.w1": weights["layers.2.ffn.w1.weight"],
+                                        "layers.2.ffn.w2": weights["layers.2.ffn.w2.weight"],
+                                        "layers.2.ffn.w3": weights["layers.2.ffn.w3.weight"],
+                                        
+                                        "rmsn_f.weights": weights["ln_final.weight"],
+                                        "lm_head.W": weights["lm_head.weight"]})
+    return transformer(in_indices)
 
 
 def run_rmsnorm(

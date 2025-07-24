@@ -92,10 +92,27 @@ class Block(nn.Module):
         self.rmsn2 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
 
     def forward(self, x: torch.Tensor):
-        x = x + self.mha(self.rmsn1(x)) # Attention
-        x = x + self.ffn(self.rmsn2(x))
+        """Need token positions to have proper RoPE"""
+        x = x + self.mha(self.rmsn1(x), ) # Attention with prenorm
+        x = x + self.ffn(self.rmsn2(x)) # SWIGLU FFN with prenorm
         return x
 
+class Transformer(nn.Module):
+
+    def __init__(self, vocab_size: int, num_layers: int, d_model: int, num_heads: int, d_ff: int, context_length: int | None=None, theta:int | None=None, device: torch.device | None=None, dtype: torch.dtype | None=None):
+        super().__init__()
+        self.embedding = Embedding(num_embeddings=vocab_size, embeddings_dim=d_model)
+        self.layers = nn.Sequential(*[Block(d_model=d_model, num_heads=num_heads, d_ff=d_ff, max_sequence_length=context_length, theta=theta, device=device, dtype=dtype) for _ in range(num_layers)])
+        self.rmsn_f = RMSNorm(d_model=d_model, eps=1e-5, device=device, dtype=dtype)
+        self.lm_head = Linear(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype)
+
+    def forward(self, x: torch.Tensor):
+        x = self.embedding(x)
+        x = self.layers(x)
+        x = self.rmsn_f(x)
+        x = self.lm_head(x)
+        #y = softmax(x=x, dimension=-1)
+        return x #y
 
 class RoPE(nn.Module):
     def __init__(self, theta: float, d_k: int, max_sequence_length: int, device: torch.device | None = None):
@@ -188,7 +205,7 @@ class MultiHeadAttention(nn.Module):
         self.Wo = Linear(d_model, num_heads * self.d_v, device=device, dtype=dtype) 
         #self.heads = [Head(head_size=head_size, dim=d_k for _ in range(num_heads)]
         #self.register_buffer(name="tril", tensor=torch.tril(torch.ones((d_model,d_model))))
-        self.tril = torch.tril(torch.ones((d_model,d_model), device=device))
+        self.tril = torch.tril(torch.ones((max_sequence_length,max_sequence_length), device=device))
         if theta is not None:
             self.rope = RoPE(theta=theta, d_k=self.d_k, max_sequence_length=max_sequence_length, device=device)
         else:
@@ -199,7 +216,9 @@ class MultiHeadAttention(nn.Module):
         Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k = self.d_k)
         K = rearrange(self.Wk(x), "b s (head d_k) -> b head s d_k", d_k = self.d_k)
         V = rearrange(self.Wv(x), "b s (head d_v) -> b head s d_v", d_v = self.d_v)
-        if self.rope != None and token_positions != None: # We are using RoPE
+        if self.rope != None: # We are using RoPE
+            if token_positions == None: # create default 0, 1, .... positions if nothing else is supplied
+                token_positions = torch.arange(Q.shape[-2]) # Seems brittle
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
 
@@ -215,6 +234,7 @@ def softmax(x: torch.Tensor, dimension: int):
     max_x = torch.max(x[dimension])
     result = torch.exp(x-max_x) / torch.sum(torch.exp(x-max_x), dim=dimension, keepdim=True)
     return result
+
 
 @staticmethod
 def scaled_dot_product_attention(Q, K, V, mask):
