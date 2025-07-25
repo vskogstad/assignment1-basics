@@ -2,13 +2,31 @@ import math
 
 import torch
 from einops import einsum, rearrange
-
+import numpy as np
 from torch import nn as nn
 from collections.abc import Callable, Iterable
 from typing import Optional
+import random
 
 
-@staticmethod
+
+def get_batch(dataset: np.array, batch_size: int, context_length: int, device: str):
+    #print(dataset, context_length, batch_size, device, type(dataset), len(dataset))
+    
+    if len(dataset) >= context_length:
+        starts = [random.randint(0, len(dataset) - context_length - 1) for _ in range(batch_size)]
+    else:
+        print("Not possible. Dataset smaller than context length")
+        return
+    
+    sample = torch.stack( tuple(torch.from_numpy(dataset[start:start + context_length + 1]) for start in starts) )
+    #print(sample, sample.shape)
+    x = sample[:, :-1]
+    y = sample[:, 1:]
+
+    return x, y
+
+
 def softmax(x: torch.Tensor, dimension: int):
     max_x = torch.max(x, dim=1, keepdim=True).values
     print(torch.max(x, dim=1))
@@ -96,7 +114,44 @@ class AdamW(torch.optim.Optimizer):
                 state["v"] = v
         
         return loss
+
+def get_lr_cosine(it: int,
+    max_learning_rate: float,
+    min_learning_rate: float,
+    warmup_iters: int,
+    cosine_cycle_iters: int):
+    """Returns a learning rate based on cosine annealing"""
+    if it < warmup_iters: # Warmup
+        lr = it / warmup_iters * max_learning_rate
+    elif it > cosine_cycle_iters: #+ warmup_iters: # Post Annealing
+        lr = min_learning_rate
+    else: # Cosine annealing
+        part = (it - warmup_iters) / (cosine_cycle_iters - warmup_iters) * math.pi
+        lr = min_learning_rate + 0.5 * (1 + math.cos(part)) * (max_learning_rate - min_learning_rate)
+
+    return lr
+
+
+def clip_gradient(parameters, max_l2_norm: float):
+    """Finds the size of the l2-norm, if higher than the max, we scale down."""
+    eps = 1e-6
+
+    # Calculate l2_norm
+    norm_squared = 0
+    for param in parameters:
+        if param.grad != None:
+            norm_squared += torch.linalg.vector_norm(param.grad) ** 2
+    l2_norm = math.sqrt(norm_squared)
+
+    if l2_norm <= max_l2_norm:
+        return
     
+    # Clip gradients
+    for param in parameters:
+        if param.grad != None:
+            param.grad *= (max_l2_norm / (l2_norm + eps))
+    return
+
 if __name__ == "__main__":
     weights = torch.nn.Parameter(5 * torch.randn((10,10)))
     opt = SGD([weights], lr=1e3)
