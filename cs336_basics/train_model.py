@@ -1,28 +1,76 @@
 import math
-
 import torch
-from einops import einsum, rearrange
+import os
+import argparse
+#from einops import einsum, rearrange
 import numpy as np
 from torch import nn as nn
 from collections.abc import Callable, Iterable
-from typing import Optional
-import random
+from typing import Optional, IO, BinaryIO
 
+# TODO: training loop with config
+# TODO: look for efficiency improvements. Mostly just passing tests at the moment
+# TODO: Muon optimizer
+
+'''
+class Config:
+    
+    def __init__(self, path: str | None=None):
+        """reads config from file or initializes with the variables shown below"""
+        if path:
+            raise NotImplementedError()
+        else:
+            optimizer = 
+
+
+'''
+
+
+def train(kwargs):
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--optimizer", type=torch.optim.Optimizer, help="Optimizer to use"
+    )
+    
+
+    
+    # Training loop
+
+def save_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, iteration: int, out: str | os.PathLike | BinaryIO | IO[bytes]):
+
+    checkpoint = {"model": model.state_dict(),
+                  "optimizer": optimizer.state_dict(),
+                  "iteration": iteration}
+    # write to output path
+    torch.save(checkpoint, out)
+
+
+def load_checkpoint(
+    src: str | os.PathLike | BinaryIO | IO[bytes], model: torch.nn.Module, optimizer: torch.optim.Optimizer):
+
+    checkpoint = torch.load(src)
+    model.load_state_dict(checkpoint["model"])
+    optimizer.load_state_dict(checkpoint["optimizer"])
+    return checkpoint["iteration"]
 
 
 def get_batch(dataset: np.array, batch_size: int, context_length: int, device: str):
-    #print(dataset, context_length, batch_size, device, type(dataset), len(dataset))
+    """Gets a random batch of x and y tensors for the model to train on"""
     
-    if len(dataset) >= context_length:
-        starts = [random.randint(0, len(dataset) - context_length - 1) for _ in range(batch_size)]
-    else:
-        print("Not possible. Dataset smaller than context length")
-        return
+    if len(dataset) < context_length:
+        raise ValueError("Dataset smaller than context length, not possible to create batches")
+
+    # Generate random starting indices
+    max_start_idx = len(dataset) - context_length - 1
+    starts = np.random.randint(0, max_start_idx + 1, size=batch_size)
     
-    sample = torch.stack( tuple(torch.from_numpy(dataset[start:start + context_length + 1]) for start in starts) )
-    #print(sample, sample.shape)
-    x = sample[:, :-1]
-    y = sample[:, 1:]
+    # Create index arrays for vectorized sampling
+    indices = starts[:, None] + np.arange(context_length + 1)
+    
+    batch = torch.from_numpy(dataset[indices]).to(device)
+
+    x = batch[:, :-1]
+    y = batch[:, 1:]
 
     return x, y
 
@@ -150,9 +198,11 @@ def clip_gradient(parameters, max_l2_norm: float):
     for param in parameters:
         if param.grad != None:
             param.grad *= (max_l2_norm / (l2_norm + eps))
-    return
+
 
 if __name__ == "__main__":
+    train()
+    '''
     weights = torch.nn.Parameter(5 * torch.randn((10,10)))
     opt = SGD([weights], lr=1e3)
     for i in range(10):
@@ -161,4 +211,4 @@ if __name__ == "__main__":
         loss = (weights**2).mean()
         print(loss.cpu().item())
         loss.backward()
-        opt.step()
+        opt.step()'''
