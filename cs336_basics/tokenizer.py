@@ -7,6 +7,9 @@ from itertools import chain
 
 import regex as re
 
+# TODO: Pass final test(memory)
+# TODO: Improve efficiency of tokenization (Lots of potential here)
+
 
 class Tokenizer:
 
