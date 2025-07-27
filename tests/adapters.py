@@ -26,15 +26,17 @@ def run_linear(
         out_dim (int): The size of the output dimension
         weights (Float[Tensor, "d_out d_in"]): The linear weights to use
         in_features (Float[Tensor, "... d_in"]): The output tensor to apply the function to
-    
+
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
 
     from cs336_basics.model import Linear
+
     linear_layer = Linear(in_features=d_in, out_features=d_out)
-    linear_layer.load_state_dict(state_dict= {"W": weights})
+    linear_layer.load_state_dict(state_dict={"W": weights})
     return linear_layer(in_features)
+
 
 def run_embedding(
     vocab_size: int,
@@ -50,14 +52,15 @@ def run_embedding(
         d_model (int): The size of the embedding dimension
         weights (Float[Tensor, "vocab_size d_model"]): The embedding vectors to fetch from
         token_ids (Int[Tensor, "..."]): The set of token ids to fetch from the Embedding layer
-    
+
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
 
     from cs336_basics.model import Embedding
+
     embedding_layer = Embedding(num_embeddings=vocab_size, embeddings_dim=d_model)
-    embedding_layer.load_state_dict(state_dict= {"embedding": weights})
+    embedding_layer.load_state_dict(state_dict={"embedding": weights})
     return embedding_layer(token_ids)
 
 
@@ -91,11 +94,12 @@ def run_swiglu(
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
     from cs336_basics.model import SWIGLU
-    swiglu = SWIGLU(d_model = d_model, d_ff = d_ff)
-    swiglu.load_state_dict(state_dict= {"w1": w1_weight, "w2": w2_weight, "w3": w3_weight})
-    #swiglu.w1.weight.data = w1_weight
-    #swiglu.w2.weight.data = w2_weight
-    #swiglu.w3.weight.data = w3_weight
+
+    swiglu = SWIGLU(d_model=d_model, d_ff=d_ff)
+    swiglu.load_state_dict(state_dict={"w1": w1_weight, "w2": w2_weight, "w3": w3_weight})
+    # swiglu.w1.weight.data = w1_weight
+    # swiglu.w2.weight.data = w2_weight
+    # swiglu.w3.weight.data = w3_weight
     return swiglu(in_features)
 
 
@@ -118,6 +122,7 @@ def run_scaled_dot_product_attention(
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
     from cs336_basics.model import scaled_dot_product_attention
+
     return scaled_dot_product_attention(Q=Q, K=K, V=V, mask=mask)
 
 
@@ -153,8 +158,11 @@ def run_multihead_self_attention(
         implementation with the given QKV projection weights and input features.
     """
     from cs336_basics.model import MultiHeadAttention
+
     mha = MultiHeadAttention(d_model=d_model, num_heads=num_heads)
-    mha.load_state_dict(state_dict = {"Wq.W": q_proj_weight, "Wk.W": k_proj_weight, "Wv.W": v_proj_weight, "Wo.W": o_proj_weight})
+    mha.load_state_dict(
+        state_dict={"Wq.W": q_proj_weight, "Wk.W": k_proj_weight, "Wv.W": v_proj_weight, "Wo.W": o_proj_weight}
+    )
     return mha(in_features)
 
 
@@ -196,9 +204,13 @@ def run_multihead_self_attention_with_rope(
         implementation with the given QKV projection weights and input features.
     """
     from cs336_basics.model import MultiHeadAttention
+
     mha = MultiHeadAttention(d_model=d_model, num_heads=num_heads, max_sequence_length=max_seq_len, theta=theta)
-    mha.load_state_dict(state_dict = {"Wq.W": q_proj_weight, "Wk.W": k_proj_weight, "Wv.W": v_proj_weight, "Wo.W": o_proj_weight})
+    mha.load_state_dict(
+        state_dict={"Wq.W": q_proj_weight, "Wk.W": k_proj_weight, "Wv.W": v_proj_weight, "Wo.W": o_proj_weight}
+    )
     return mha(in_features, token_positions)
+
 
 def run_rope(
     d_k: int,
@@ -220,6 +232,7 @@ def run_rope(
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
     from cs336_basics.model import RoPE
+
     roped_tensor = RoPE(theta=theta, d_k=d_k, max_sequence_length=max_seq_len)
     return roped_tensor(x=in_query_or_key, token_positions=token_positions)
 
@@ -295,18 +308,24 @@ def run_transformer_block(
         running the Transformer block on the input features while using RoPE.
     """
     from cs336_basics.model import Block
-    block = Block(d_model=d_model, num_heads = num_heads, d_ff=d_ff, max_sequence_length=max_seq_len, theta=theta)
-    #print(f"{weights.keys()=}")
-    block.load_state_dict(state_dict = {"mha.Wq.W": weights["attn.q_proj.weight"], 
-                                        "mha.Wk.W": weights["attn.k_proj.weight"], 
-                                        "mha.Wv.W": weights["attn.v_proj.weight"], 
-                                        "mha.Wo.W": weights["attn.output_proj.weight"],
-                                        "rmsn1.weights": weights["ln1.weight"],
-                                        "rmsn2.weights": weights["ln2.weight"],
-                                        "ffn.w1": weights["ffn.w1.weight"],
-                                        "ffn.w2": weights["ffn.w2.weight"],
-                                        "ffn.w3": weights["ffn.w3.weight"],})
+
+    block = Block(d_model=d_model, num_heads=num_heads, d_ff=d_ff, max_sequence_length=max_seq_len, theta=theta)
+    # print(f"{weights.keys()=}")
+    block.load_state_dict(
+        state_dict={
+            "mha.Wq.W": weights["attn.q_proj.weight"],
+            "mha.Wk.W": weights["attn.k_proj.weight"],
+            "mha.Wv.W": weights["attn.v_proj.weight"],
+            "mha.Wo.W": weights["attn.output_proj.weight"],
+            "rmsn1.weights": weights["ln1.weight"],
+            "rmsn2.weights": weights["ln2.weight"],
+            "ffn.w1": weights["ffn.w1.weight"],
+            "ffn.w2": weights["ffn.w2.weight"],
+            "ffn.w3": weights["ffn.w3.weight"],
+        }
+    )
     return block(in_features)
+
 
 def run_transformer_lm(
     vocab_size: int,
@@ -333,7 +352,7 @@ def run_transformer_lm(
             evenly divisible by `num_heads`.
         d_ff (int): Dimensionality of the feed-forward inner layer (section 3.3).
         rope_theta (float): The RoPE $\Theta$ parameter.
-        weights (dict[str, Tensor]): 
+        weights (dict[str, Tensor]):
             State dict of our reference implementation. {num_layers} refers to an
             integer between `0` and `num_layers - 1` (the layer index).
             The keys of this dictionary are:
@@ -388,41 +407,51 @@ def run_transformer_lm(
         next-word distribution for each token.
     """
     from cs336_basics.model import Transformer
-    transformer = Transformer(vocab_size=vocab_size, num_layers=num_layers, d_model=d_model, num_heads = num_heads, d_ff=d_ff, context_length=context_length, theta=rope_theta, )
-    #print(f"{weights.keys()=}")
-    transformer.load_state_dict(state_dict = {"embedding.embedding": weights["token_embeddings.weight"],
-                                        
-                                        "layers.0.mha.Wq.W": weights["layers.0.attn.q_proj.weight"], 
-                                        "layers.0.mha.Wk.W": weights["layers.0.attn.k_proj.weight"], 
-                                        "layers.0.mha.Wv.W": weights["layers.0.attn.v_proj.weight"], 
-                                        "layers.0.mha.Wo.W": weights["layers.0.attn.output_proj.weight"],
-                                        "layers.0.rmsn1.weights": weights["layers.0.ln1.weight"],
-                                        "layers.0.rmsn2.weights": weights["layers.0.ln2.weight"],
-                                        "layers.0.ffn.w1": weights["layers.0.ffn.w1.weight"],
-                                        "layers.0.ffn.w2": weights["layers.0.ffn.w2.weight"],
-                                        "layers.0.ffn.w3": weights["layers.0.ffn.w3.weight"],
-                                        "layers.1.mha.Wq.W": weights["layers.1.attn.q_proj.weight"], 
-                                        "layers.1.mha.Wk.W": weights["layers.1.attn.k_proj.weight"], 
-                                        "layers.1.mha.Wv.W": weights["layers.1.attn.v_proj.weight"], 
-                                        "layers.1.mha.Wo.W": weights["layers.1.attn.output_proj.weight"],
-                                        "layers.1.rmsn1.weights": weights["layers.1.ln1.weight"],
-                                        "layers.1.rmsn2.weights": weights["layers.1.ln2.weight"],
-                                        "layers.1.ffn.w1": weights["layers.1.ffn.w1.weight"],
-                                        "layers.1.ffn.w2": weights["layers.1.ffn.w2.weight"],
-                                        "layers.1.ffn.w3": weights["layers.1.ffn.w3.weight"],
 
-                                        "layers.2.mha.Wq.W": weights["layers.2.attn.q_proj.weight"], 
-                                        "layers.2.mha.Wk.W": weights["layers.2.attn.k_proj.weight"], 
-                                        "layers.2.mha.Wv.W": weights["layers.2.attn.v_proj.weight"], 
-                                        "layers.2.mha.Wo.W": weights["layers.2.attn.output_proj.weight"],
-                                        "layers.2.rmsn1.weights": weights["layers.2.ln1.weight"],
-                                        "layers.2.rmsn2.weights": weights["layers.2.ln2.weight"],
-                                        "layers.2.ffn.w1": weights["layers.2.ffn.w1.weight"],
-                                        "layers.2.ffn.w2": weights["layers.2.ffn.w2.weight"],
-                                        "layers.2.ffn.w3": weights["layers.2.ffn.w3.weight"],
-                                        
-                                        "rmsn_f.weights": weights["ln_final.weight"],
-                                        "lm_head.W": weights["lm_head.weight"]})
+    transformer = Transformer(
+        vocab_size=vocab_size,
+        num_layers=num_layers,
+        d_model=d_model,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        context_length=context_length,
+        theta=rope_theta,
+    )
+    # print(f"{weights.keys()=}")
+    transformer.load_state_dict(
+        state_dict={
+            "embedding.embedding": weights["token_embeddings.weight"],
+            "layers.0.mha.Wq.W": weights["layers.0.attn.q_proj.weight"],
+            "layers.0.mha.Wk.W": weights["layers.0.attn.k_proj.weight"],
+            "layers.0.mha.Wv.W": weights["layers.0.attn.v_proj.weight"],
+            "layers.0.mha.Wo.W": weights["layers.0.attn.output_proj.weight"],
+            "layers.0.rmsn1.weights": weights["layers.0.ln1.weight"],
+            "layers.0.rmsn2.weights": weights["layers.0.ln2.weight"],
+            "layers.0.ffn.w1": weights["layers.0.ffn.w1.weight"],
+            "layers.0.ffn.w2": weights["layers.0.ffn.w2.weight"],
+            "layers.0.ffn.w3": weights["layers.0.ffn.w3.weight"],
+            "layers.1.mha.Wq.W": weights["layers.1.attn.q_proj.weight"],
+            "layers.1.mha.Wk.W": weights["layers.1.attn.k_proj.weight"],
+            "layers.1.mha.Wv.W": weights["layers.1.attn.v_proj.weight"],
+            "layers.1.mha.Wo.W": weights["layers.1.attn.output_proj.weight"],
+            "layers.1.rmsn1.weights": weights["layers.1.ln1.weight"],
+            "layers.1.rmsn2.weights": weights["layers.1.ln2.weight"],
+            "layers.1.ffn.w1": weights["layers.1.ffn.w1.weight"],
+            "layers.1.ffn.w2": weights["layers.1.ffn.w2.weight"],
+            "layers.1.ffn.w3": weights["layers.1.ffn.w3.weight"],
+            "layers.2.mha.Wq.W": weights["layers.2.attn.q_proj.weight"],
+            "layers.2.mha.Wk.W": weights["layers.2.attn.k_proj.weight"],
+            "layers.2.mha.Wv.W": weights["layers.2.attn.v_proj.weight"],
+            "layers.2.mha.Wo.W": weights["layers.2.attn.output_proj.weight"],
+            "layers.2.rmsn1.weights": weights["layers.2.ln1.weight"],
+            "layers.2.rmsn2.weights": weights["layers.2.ln2.weight"],
+            "layers.2.ffn.w1": weights["layers.2.ffn.w1.weight"],
+            "layers.2.ffn.w2": weights["layers.2.ffn.w2.weight"],
+            "layers.2.ffn.w3": weights["layers.2.ffn.w3.weight"],
+            "rmsn_f.weights": weights["ln_final.weight"],
+            "lm_head.W": weights["lm_head.weight"],
+        }
+    )
     return transformer(in_indices)
 
 
@@ -447,10 +476,10 @@ def run_rmsnorm(
         RMSNorm of the `in_features`.
     """
     from cs336_basics.model import RMSNorm
-    RMSNorm_layer = RMSNorm(d_model=d_model, eps=eps)
-    RMSNorm_layer.load_state_dict(state_dict= {"weights": weights})
-    return RMSNorm_layer(in_features)
 
+    RMSNorm_layer = RMSNorm(d_model=d_model, eps=eps)
+    RMSNorm_layer.load_state_dict(state_dict={"weights": weights})
+    return RMSNorm_layer(in_features)
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
@@ -465,6 +494,7 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         SiLU to each element.
     """
     from cs336_basics.model import SILU
+
     SILU_activation = SILU()
     return SILU_activation(in_features)
 
@@ -490,6 +520,7 @@ def run_get_batch(
         language modeling labels.
     """
     from cs336_basics.train_model import get_batch
+
     return get_batch(dataset=dataset, batch_size=batch_size, context_length=context_length, device=device)
 
 
@@ -507,10 +538,13 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         softmax normalizing the specified `dim`.
     """
     from cs336_basics.model import softmax
+
     return softmax(in_features, dim)
 
 
-def run_cross_entropy(inputs: Float[Tensor, " batch_size vocab_size"], targets: Int[Tensor, " batch_size"]) -> Float[Tensor, ""]:
+def run_cross_entropy(
+    inputs: Float[Tensor, " batch_size vocab_size"], targets: Int[Tensor, " batch_size"]
+) -> Float[Tensor, ""]:
     """Given a tensor of inputs and targets, compute the average cross-entropy
     loss across examples.
 
@@ -523,9 +557,10 @@ def run_cross_entropy(inputs: Float[Tensor, " batch_size vocab_size"], targets: 
     Returns:
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
-    
+
     from cs336_basics.train_model import cross_entropy
-    return cross_entropy(x=inputs, targets=targets)
+
+    return cross_entropy(pred=inputs, targets=targets)
 
 
 def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
@@ -538,6 +573,7 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
     from cs336_basics.train_model import clip_gradient
+
     return clip_gradient(parameters=parameters, max_l2_norm=max_l2_norm)
 
 
@@ -546,6 +582,7 @@ def get_adamw_cls() -> type[torch.optim.Optimizer]:
     Returns a torch.optim.Optimizer that implements AdamW.
     """
     from cs336_basics.train_model import AdamW
+
     return AdamW
 
 
@@ -575,7 +612,14 @@ def run_get_lr_cosine_schedule(
         Learning rate at the given iteration under the specified schedule.
     """
     from cs336_basics.train_model import get_lr_cosine
-    return get_lr_cosine(it=it, max_learning_rate=max_learning_rate, min_learning_rate=min_learning_rate, warmup_iters=warmup_iters, cosine_cycle_iters=cosine_cycle_iters)
+
+    return get_lr_cosine(
+        it=it,
+        max_learning_rate=max_learning_rate,
+        min_learning_rate=min_learning_rate,
+        warmup_iters=warmup_iters,
+        cosine_cycle_iters=cosine_cycle_iters,
+    )
 
 
 def run_save_checkpoint(
@@ -595,6 +639,7 @@ def run_save_checkpoint(
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
     from cs336_basics.train_model import save_checkpoint
+
     return save_checkpoint(model=model, optimizer=optimizer, iteration=iteration, out=out)
 
 
@@ -617,6 +662,7 @@ def run_load_checkpoint(
         int: the previously-serialized number of iterations.
     """
     from cs336_basics.train_model import load_checkpoint
+
     return load_checkpoint(src=src, model=model, optimizer=optimizer)
 
 
@@ -641,8 +687,8 @@ def get_tokenizer(
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
 
-    
     from cs336_basics.tokenizer import Tokenizer
+
     return Tokenizer(vocab=vocab, merges=merges, special_tokens=special_tokens)
     with cProfile.Profile() as profile:
         tokenizer_a = Tokenizer(vocab=vocab, merges=merges, special_tokens=special_tokens)
@@ -650,8 +696,6 @@ def get_tokenizer(
         result = pstats.Stats(profile)
         result.sort_stats(pstats.SortKey.TIME)
         result.print_stats(10)
-
-
 
     return tokenizer_a
 
@@ -684,6 +728,7 @@ def run_train_bpe(
                 Merges are ordered by order of creation.
     """
     from cs336_basics.train_bpe import train_bpe
+
     with cProfile.Profile() as profile:
         vocab, merges = train_bpe(input_path=input_path, vocab_size=vocab_size, special_tokens=special_tokens)
 
@@ -691,7 +736,4 @@ def run_train_bpe(
         result.sort_stats(pstats.SortKey.TIME)
         result.print_stats(10)
 
-
-
     return vocab, merges
-
