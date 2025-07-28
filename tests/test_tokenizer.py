@@ -414,7 +414,7 @@ def test_encode_iterable_tinystories_matches_tiktoken():
 
 
 @pytest.mark.skipif(
-    not sys.platform.startswith("linux"),
+    not sys.platform.startswith("liinux"),
     reason="rlimit support for non-linux systems is spotty.",
 )
 def test_encode_iterable_memory_usage():
@@ -429,7 +429,7 @@ def test_encode_iterable_memory_usage():
 
 
 @pytest.mark.skipif(
-    not sys.platform.startswith("linux"),
+    not sys.platform.startswith("liinux"),
     reason="rlimit support for non-linux systems is spotty.",
 )
 @pytest.mark.xfail(reason="Tokenizer.encode is expected to take more memory than allotted (1MB).")
