@@ -36,9 +36,9 @@ class Tokenizer:
         """
         Only works with .pkl files for now. Serialization of bytes with json is not totally straight forward, might need to import base64.
         """
-        with open("cs336_basics/vocab-tiny.pkl", "rb") as vocab_file:
+        with open(vocab_filepath, "rb") as vocab_file:
             vocab = pickle.load(vocab_file)
-        with open("cs336_basics/merges-tiny.pkl", "rb") as merges_file:
+        with open(merges_filepath, "rb") as merges_file:
             merges = pickle.load(merges_file)
         return cls(vocab=vocab, merges=merges, special_tokens=special_tokens)
         
@@ -156,13 +156,18 @@ class Tokenizer:
     def throughput(filename: str, tokenizer) -> None:
         with open(filename) as f:
             text = f.read()
-        bytes_string = len(bytes(text, encoding="utf-8"))
+        num_bytes = len(bytes(text, encoding="utf-8"))
+        tokenizer.encode("warmup")
         t0 = time.time()
         indices = tokenizer.encode(text)
         t1 = time.time()
-        throughput = bytes_string / (t1 - t0) * 1024
-        print(f"For the {filename} dataset we get {Tokenizer.compression_ratio(text, indices)=}")
+        throughput = num_bytes / (t1 - t0) 
+
+        compression_ratio = Tokenizer.compression_ratio(text, indices)
+        print(f"For the {filename} dataset we get {compression_ratio=}")
         print(f" and {throughput=} bytes/s, {throughput/1024:.2f} MB/s")
+
+        
         return throughput
 
     @staticmethod
@@ -193,7 +198,15 @@ if __name__ == "__main__":
     dec = tokenizer.decode(enc)
     print(dec)
 
-    import sys; sys.exit()
+    #import sys; sys.exit()
     # Test throughput
-    throughput(filename="data/sample_owt.txt", tokenizer=tokenizer)
-    throughput(filename="data/sample_tiny.txt", tokenizer=tokenizer) 
+    import cProfile
+    import pstats
+    with cProfile.Profile() as profile:
+        tokenizer.throughput(filename="data/sample_owt.txt", tokenizer=tokenizer)
+        tokenizer.throughput(filename="data/sample_tiny.txt", tokenizer=tokenizer) 
+        
+        result = pstats.Stats(profile)
+        result.sort_stats(pstats.SortKey.TIME)
+        result.print_stats(10)
+    
