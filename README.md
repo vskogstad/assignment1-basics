@@ -1,5 +1,9 @@
 # CS336 Spring 2025 Assignment 1: Basics
 
+My implementation of Assignment 1 in CS-336. What follows is the orignial readme:
+
+
+
 For a full description of the assignment, see the assignment handout at
 [cs336_spring2025_assignment1_basics.pdf](./cs336_spring2025_assignment1_basics.pdf)
 
