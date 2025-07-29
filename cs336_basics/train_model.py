@@ -260,7 +260,9 @@ def clip_gradient(parameters, max_l2_norm: float):
 
 
 if __name__ == "__main__":
-    train()
+    from .config import Config
+    base_config = Config
+    train(cfg=base_config)
     """
     weights = torch.nn.Parameter(5 * torch.randn((10,10)))
     opt = SGD([weights], lr=1e3)
