@@ -16,29 +16,41 @@ def resource_accounting(config):
     num_heads = config.num_heads
     d_ff = config.d_ff
 
-    sequence_length = context_length # not neccessarily the case.
+    sequence_length = context_length  # not neccessarily the case.
     batch_size = 8
 
     # Parameters
     positional_params = context_length * d_model
     embedding_params = vocab_size * d_model  # covers both embedding and final lm_head due to weight sharing
     ffn_params = num_layers * (2 * d_ff * d_model)
-    mha_params = num_layers * (4 * num_heads * d_model * d_model / num_heads)
-    ln_params = num_layers * (2 * d_model * 2)  + d_model * 2 #
+    mha_params = num_layers * (4 * num_heads * d_model * d_model / num_heads)  # 4 = K,Q,V,O
+    ln_params = num_layers * (2 * d_model * 2) + d_model * 2  #
     total_parameters = positional_params + embedding_params + ffn_params + mha_params + ln_params
     print(f"{total_parameters / (1000 * 1000)=}")
 
+    # FLOPS (skipped rmsnorm)
+    pos_flops = 1 * sequence_length * d_model
+    ffn_flops = num_layers * (4 * sequence_length * d_ff * d_model)
+    mha_flops = num_layers * (
+        (3 * 2 * sequence_length * d_model * d_model)  # Q K and V
+        + (2 * sequence_length * d_model * sequence_length)  # Q @ K^T
+        + (2 * sequence_length * sequence_length * d_model)  # attn @ V
+        + (2 * sequence_length * d_model * d_model)  # out @ W_O
+    )
+    lmhead_flops = 2 * (sequence_length * vocab_size * d_model)
+    total_flops = pos_flops + ffn_flops + mha_flops + lmhead_flops
+    flops_per_part = [pos_flops/total_flops, ffn_flops/total_flops, mha_flops/total_flops, lmhead_flops/total_flops]
+    print(f"{total_flops/1e12=:.2f} | {flops_per_part=}")
 
     # MEMORY
-
     num_gradients = total_parameters
     optimizer_states = total_parameters * 2  # momentum + variance
 
     # Activations
-    embedding_activations = sequence_length * d_model 
-    #ffn
-    
-    linear_activations =  (d_model + d_ff ) * sequence_length
+    embedding_activations = sequence_length * d_model
+    # ffn
+
+    linear_activations = (d_model + d_ff) * sequence_length
     # mha
 
     KQV_activations = sequence_length * d_model * 3
@@ -49,18 +61,18 @@ def resource_accounting(config):
     num_activations = (embedding_activations + num_layers * (linear_activations + attention_activations)) * batch_size
 
     # Total memory
-    element_size = 4 # single precision float is 4 bytes 32 / 8
-    memory = (num_activations + total_parameters + num_gradients + optimizer_states) * element_size 
+    element_size = 4  # single precision float is 4 bytes 32 / 8
+    memory = (num_activations + total_parameters + num_gradients + optimizer_states) * element_size
     print(f"{memory/1024**3=} GB")
+    # loading model only
+    loading_memory = total_parameters * element_size
+    print(f"{loading_memory/1024**3=:.2f} GB")
 
-    rough_forward_flops_estimate = (2 * 1 * total_parameters)  # 2 * tokens * num parameters (1 token for one forward pass)
-    print(f"{rough_forward_flops_estimate=} FLOPs")
+    rough_forward_flops_estimate = (
+        2 * sequence_length * total_parameters
+    )  # 2 * tokens * num parameters (1 token for one forward pass)
+    print(f"{rough_forward_flops_estimate/1e12=} TFLOPs")
 
-    #
-    flops_per_part = {
-        "FFN": 0,
-        "MHA": 0,
-    }
     return total_parameters, flops_per_part
 
 
@@ -72,4 +84,4 @@ if __name__ == "__main__":
 
     # increased context length
     gpt2xlxc_cfg = Config(vocab_size=50257, context_length=16384, num_layers=48, d_model=1600, num_heads=25, d_ff=6400)
-    resource_accounting(gpt2xl_cfg)
+    resource_accounting(gpt2xlxc_cfg)

@@ -113,65 +113,7 @@ class Tokenizer:
             
         return list(chain.from_iterable(indeces))
     
-    def encode2(self, text: str) -> list[int]:
-        
-        escaped = [re.escape(token.decode()) for token in self.special_tokens]
-        # regex finishes at first match. if we sort by length desc, we will get substrings of longer strings at the end. 
-        # matching <|endoftext|><|endoftext|> before <|endoftext|>
-        escaped.sort(key=len, reverse=True)
-        SPECIAL = r"|".join(escaped)
-        #text = text.encode("utf-8")
-        PAT = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
-        segments = []
-        try:
-            specials = [self.vocab_to_int[spec.encode()] for spec in re.findall(SPECIAL, text)]
-            splitted = re.split(SPECIAL, text)
-        except KeyError:
-            specials = []
-            splitted = text
-            #import sys;sys.exit()
-        indeces = []
-        # UGLY! 
-        for i, chunk in enumerate(splitted):
-            segments = []
-            for segment in PAT.findall(chunk): 
-                segments.append(segment.encode())
-            for segment in segments:
-                # Need this line to work with GPT2-vocab. Can't assume sorted in ascii order. 
-                segment = [self.vocab_to_int[bytes([byte_val])] for byte_val in segment]
-                for best_pair in self.merges:
-                    if len(segment) < 2: # No more meges possible
-                        break
-                    a, b = best_pair
-                    new_token = a + b
 
-                    new_token_id = self.vocab_to_int[new_token]
-                    best_pair = self.vocab_to_int[a], self.vocab_to_int[b]
-                    skip = False
-                    word_tokenization = []
-
-                    for c1, c2 in zip(segment, segment[1:]):
-
-                        if skip:
-                            skip = False
-                            continue
-
-                        if best_pair == (c1, c2):
-                            skip = True
-                            #print(f"merging {c1} and {c2} into {new_token_id}")
-                            word_tokenization.append(new_token_id)
-
-                        else:
-                            word_tokenization.append(c1)
-                    else:
-                        if not skip:
-                            word_tokenization.append(c2)
-                    segment = word_tokenization
-                indeces.append(segment)
-            if specials and i < len(splitted) - 1:
-                indeces.append([specials[i]])
-        
-        return list(chain.from_iterable(indeces))
     
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
         """
@@ -282,8 +224,8 @@ if __name__ == "__main__":
     print(dec)
     
     ## 
-    file_to_numpy(output=r"cs336_basics/test_array2", text_file=r"data/TinyStories-valid.txt", tokenizer=tokenizer)
-    tokenizer.throughput(filename="data/TinyStories-mini.txt", tokenizer=tokenizer) 
+    #file_to_numpy(output=r"cs336_basics/test_array3", text_file=r"data/sample_tiny.txt", tokenizer=tokenizer)
+    tokenizer.throughput(filename="data/TinyStoriesV2-GPT4-valid.txt", tokenizer=tokenizer) 
     import sys; sys.exit()
 
     # Test throughput
@@ -297,3 +239,62 @@ if __name__ == "__main__":
         result.sort_stats(pstats.SortKey.TIME)
         result.print_stats(10)
     
+        def encode2(self, text: str) -> list[int]:
+        
+        escaped = [re.escape(token.decode()) for token in self.special_tokens]
+        # regex finishes at first match. if we sort by length desc, we will get substrings of longer strings at the end. 
+        # matching <|endoftext|><|endoftext|> before <|endoftext|>
+        escaped.sort(key=len, reverse=True)
+        SPECIAL = r"|".join(escaped)
+        #text = text.encode("utf-8")
+        PAT = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
+        segments = []
+        try:
+            specials = [self.vocab_to_int[spec.encode()] for spec in re.findall(SPECIAL, text)]
+            splitted = re.split(SPECIAL, text)
+        except KeyError:
+            specials = []
+            splitted = text
+            #import sys;sys.exit()
+        indeces = []
+        # UGLY! 
+        for i, chunk in enumerate(splitted):
+            segments = []
+            for segment in PAT.findall(chunk): 
+                segments.append(segment.encode())
+            for segment in segments:
+                # Need this line to work with GPT2-vocab. Can't assume sorted in ascii order. 
+                segment = [self.vocab_to_int[bytes([byte_val])] for byte_val in segment]
+                for best_pair in self.merges:
+                    if len(segment) < 2: # No more meges possible
+                        break
+                    a, b = best_pair
+                    new_token = a + b
+
+                    new_token_id = self.vocab_to_int[new_token]
+                    best_pair = self.vocab_to_int[a], self.vocab_to_int[b]
+                    skip = False
+                    word_tokenization = []
+
+                    for c1, c2 in zip(segment, segment[1:]):
+
+                        if skip:
+                            skip = False
+                            continue
+
+                        if best_pair == (c1, c2):
+                            skip = True
+                            #print(f"merging {c1} and {c2} into {new_token_id}")
+                            word_tokenization.append(new_token_id)
+
+                        else:
+                            word_tokenization.append(c1)
+                    else:
+                        if not skip:
+                            word_tokenization.append(c2)
+                    segment = word_tokenization
+                indeces.append(segment)
+            if specials and i < len(splitted) - 1:
+                indeces.append([specials[i]])
+        
+        return list(chain.from_iterable(indeces))

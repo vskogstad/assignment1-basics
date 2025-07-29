@@ -79,13 +79,47 @@ a) Compression ratio on TinyStories/OpenWebText is: / .
 
 b) Compression on OpenWebText with Tinystories tokenizer reduces the compression to . The vocabulary is not adapted to the source material.
 
-c) Throughput in bytes/s = . Estimated time spent = 825 * 1024 * 1024 * 1024 (bytes) / Throughput  (bytes/s) =  (s) or roughly 
+c) Throughput in MB/s = . Estimated time spent = 825 * 1024 **4 (bytes) / Throughput  (bytes/s) =  (s) or roughly 
 
 d) uint16 can store positive values up to 65535, which fits well with the vocabulary sizes we've been targetting. If we wanted to go up to say, 100 000 merges we would have to select a different data type.
 
 **Resource accounting model**
 
-a) Our model would have 
+a) Our model would have 1,557 billion parameters. Memory to load just the model is 5.80 GB
+
+b)  '''
+ # FLOPS (skipped rmsnorm)
+    pos_flops = 1 * sequence_length * d_model
+    ffn_flops = num_layers * (4 * sequence_length * d_ff * d_model)  # x @ W_up + W_down @ x
+    mha_flops = num_layers * (
+        (3 * 2 * sequence_length * d_model * d_model)  # Q K and V
+        + (2 * sequence_length * d_model * sequence_length)  # Q @ K^T
+        + (2 * sequence_length * sequence_length * d_model)  # attn @ V
+        + (2 * sequence_length * d_model * d_model)  # out @ W_O
+    )
+    lmhead_flops = 2 * (sequence_length * vocab_size * d_model) # x @ W_lm_head
+
+FFN:        39.8% (S) / 57.4% (XL)
+Attention:  33.1% (S) / 37.9% (XL)
+LM Head:    27.1% (S) /  4.7% (XL)
+Positional: ~0% (negligible)
+
+To do one forward pass requires 3.51 TFLOPs.
+
+c) Linear layers make up the majority, for small models the lm_head becomes a huge fraction. As we scale the sequence length, mha will dominate.
+
+d) 
+FFN:        49.8% (M) / 54.4% (L)
+Attention:  37.4% (M) / 38.1% (L)
+LM Head:    12.7% (M) /  7.4% (L)
+Positional: ~0% (negligible)
+For small models the lm_head is a huge fraction. As we scale up the model it becomes less and less important. If we scale up the sequence length more than model dimensions, Attention will grow larger than ffn.
+
+e) To do one forward pass requires 133.42 TFLOPS
+FFN:        24.1% 
+Attention:  73.9% 
+LM Head:    2.0% 
+Positional: ~0% (negligible)
 
 **Tuning the learning rate**
 
