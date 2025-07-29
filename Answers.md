@@ -79,7 +79,7 @@ c) Throughput in bytes/s = . Estimated time spent = 825 * 1024 * 1024 * 1024 (by
 d) uint16 can store positive values up to 65535, which fits well with the vocabulary sizes we've been targetting. If we wanted to go up to say, 100 000 merges we would have to select a different data type.
 
 **Resource accounting model**
-
+1.557 billion parameters, we need 
 
 
 **Tuning the learning rate**
