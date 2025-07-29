@@ -1,4 +1,5 @@
 import json
+import numpy as np
 import pickle
 import time
 from collections.abc import Iterable, Iterator
@@ -42,8 +43,77 @@ class Tokenizer:
             merges = pickle.load(merges_file)
         return cls(vocab=vocab, merges=merges, special_tokens=special_tokens)
         
-
     def encode(self, text: str) -> list[int]:
+        
+        escaped = [re.escape(token.decode()) for token in self.special_tokens]
+        # regex finishes at first match. if we sort by length desc, we will get substrings of longer strings at the end. 
+        # matching <|endoftext|><|endoftext|> before <|endoftext|>
+        escaped.sort(key=len, reverse=True)
+        SPECIAL = r"|".join(escaped)
+        #text = text.encode("utf-8")
+        PAT = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
+        segments = []
+        try:
+            specials = [self.vocab_to_int[spec.encode()] for spec in re.findall(SPECIAL, text)]
+            splitted = re.split(SPECIAL, text)
+        except KeyError:
+            specials = []
+            splitted = text
+            #import sys;sys.exit()
+        indeces = []
+        # UGLY! 
+        for i, chunk in enumerate(splitted):
+                segments = []
+                for segment in PAT.findall(chunk): 
+                    segments.append(segment.encode())
+                
+                for segment in segments:
+                    # Convert to token IDs
+                    segment = [self.vocab_to_int[bytes([byte_val])] for byte_val in segment]
+                    
+                    # OPTIMIZED MERGE PROCESS
+                    while len(segment) >= 2:
+                        # Find all pairs in current segment and their positions
+                        pairs_in_segment = {}
+                        for idx in range(len(segment) - 1):
+                            pair = (segment[idx], segment[idx + 1])
+                            if pair not in pairs_in_segment:
+                                pairs_in_segment[pair] = []
+                            pairs_in_segment[pair].append(idx)
+                        
+                        # Find the highest priority merge that exists in this segment
+                        best_merge_idx = None
+                        best_pair = None
+                        
+                        for merge_idx, merge_bytes in enumerate(self.merges):
+                            a, b = merge_bytes
+                            pair_ids = (self.vocab_to_int[a], self.vocab_to_int[b])
+                            if pair_ids in pairs_in_segment:
+                                best_merge_idx = merge_idx
+                                best_pair = pair_ids
+                                break  # Found highest priority merge
+                        
+                        if best_pair is None:
+                            break  # No more merges possible
+                        
+                        # Apply the best merge
+                        new_token = self.merges[best_merge_idx][0] + self.merges[best_merge_idx][1]
+                        new_token_id = self.vocab_to_int[new_token]
+                        
+                        # Merge all instances of this pair (from right to left to avoid index shifting)
+                        positions = pairs_in_segment[best_pair]
+                        for pos in reversed(positions):
+                            if pos < len(segment) - 1 and segment[pos] == best_pair[0] and segment[pos + 1] == best_pair[1]:
+                                segment[pos:pos + 2] = [new_token_id]
+                    
+                    indeces.append(segment)
+                
+                if specials and i < len(splitted) - 1:
+                    indeces.append([specials[i]])
+            
+        return list(chain.from_iterable(indeces))
+    
+    def encode2(self, text: str) -> list[int]:
         
         escaped = [re.escape(token.decode()) for token in self.special_tokens]
         # regex finishes at first match. if we sort by length desc, we will get substrings of longer strings at the end. 
@@ -154,18 +224,22 @@ class Tokenizer:
 
     @staticmethod
     def throughput(filename: str, tokenizer) -> None:
-        with open(filename) as f:
+        with open(filename, encoding="utf-8") as f:
             text = f.read()
-        num_bytes = len(bytes(text, encoding="utf-8"))
-        tokenizer.encode("warmup")
-        t0 = time.time()
-        indices = tokenizer.encode(text)
-        t1 = time.time()
-        throughput = num_bytes / (t1 - t0) 
+            num_bytes = len(bytes(text, encoding="utf-8"))
+            f.seek(0)
+            tokenizer.encode("warmup")
+            t0 = time.time()
+            indices = []
+            for _id in tokenizer.encode_iterable(f):
+                indices.append(_id)
+                #indices = tokenizer.encode_iterable(f)
+            t1 = time.time()
+            throughput = num_bytes / (t1 - t0) 
 
         compression_ratio = Tokenizer.compression_ratio(text, indices)
         print(f"For the {filename} dataset we get {compression_ratio=}")
-        print(f" and {throughput=} bytes/s, {throughput/1024:.2f} MB/s")
+        print(f" and {throughput=} bytes/s, {throughput/1024**2:.2f} MB/s")
 
         
         return throughput
@@ -176,7 +250,16 @@ class Tokenizer:
         bytes_indices = len(indices)
         compression_ratio = bytes_string / bytes_indices
         return compression_ratio
-    
+
+
+def file_to_numpy(output: str, text_file: str, tokenizer):
+    """Tokenizes a text file into a one-dimensional numpy vector for training"""
+    ids = []
+    with open(file=text_file, encoding='utf-8') as f:
+        for _id in tokenizer.encode_iterable(f):
+            ids.append(_id)
+    np.save(output, arr=ids) #, mmap_mode="w")
+
 
 if __name__ == "__main__":
 
@@ -197,8 +280,12 @@ if __name__ == "__main__":
     print(enc)
     dec = tokenizer.decode(enc)
     print(dec)
+    
+    ## 
+    file_to_numpy(output=r"cs336_basics/test_array2", text_file=r"data/TinyStories-valid.txt", tokenizer=tokenizer)
+    tokenizer.throughput(filename="data/TinyStories-mini.txt", tokenizer=tokenizer) 
+    import sys; sys.exit()
 
-    #import sys; sys.exit()
     # Test throughput
     import cProfile
     import pstats
