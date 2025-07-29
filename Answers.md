@@ -1,4 +1,5 @@
 **Understanding Unicode**
+
 a) The Unicode character 0 is the terminate-string character. It is not a regular character.
 
 b) Its repr is '\\x00' while the str is '\x00'.
@@ -7,6 +8,7 @@ c) For me the character does not display anything when used outside a print stat
 
 
 **Unicode encodings**
+
 a) It takes up less space.
 
 b) It works only for single-byte chars as the function are splitting per byte. It will fail for 'Å' for example.
@@ -15,6 +17,7 @@ c) 0xa5 followed by any other byte. It is not a valid start byte, and can only b
 
 
 **BPE training on tinystories**
+
 a) It takes 160 seconds total on 4 processes using re.findall(), 230 secs with finditer(). Theoretically 64 GB of ram available, but just using 4 out of 8 cores. I think I might be IO-bound as I don't see improvement going up to 8.
  Almost all of the time post-tokenization is spent in the find_best_pair function iterating over a growing dictionary. After improving the find_best_pair algorithm, this time is reduced from 27.3 to 15.1 secs.
 
@@ -43,6 +46,7 @@ b' accomplishment'
 
 
 **BPE on open webtext**
+
 Heuristic sizing of good pairs with hyperparameter = 10, 8 processes and multithreaded encoding. 3.06 hours. Switched to doing encoding out of multithreaded part and saw speedups on other datasests afterwards. Could likely see further improvements here. 
       
          1735332825 function calls (1735332645 primitive calls) in 11018.474 seconds
@@ -70,6 +74,7 @@ b) The tokenizers reflect the information contained in the datasets. As owt is a
 
 
 **Tokenizer_experiments**
+
 a) Compression ratio on TinyStories/OpenWebText is: / . 
 
 b) Compression on OpenWebText with Tinystories tokenizer reduces the compression to . The vocabulary is not adapted to the source material.
@@ -80,9 +85,10 @@ d) uint16 can store positive values up to 65535, which fits well with the vocabu
 
 **Resource accounting model**
 
-
+a) Our model would have 
 
 **Tuning the learning rate**
+
 Results after 10 iterations:
 Loss with lr 1e1 = 3.07
 Loss with lr 1e2 = 4.16e-23
@@ -94,5 +100,6 @@ A learning rate of 1e1 is already quite agressive and gives rapid convergence to
 
 
 **Final optimizations**
+
 Shared embedding matrix in/out
 Muon optimizer
