@@ -1,16 +1,17 @@
 import argparse
 import math
 import os
-import wandb
 from collections.abc import Callable, Iterable
 from typing import IO, BinaryIO, Optional
 
 # from einops import einsum, rearrange
 import numpy as np
 import torch
+import wandb
 from torch import nn as nn
 
 from cs336_basics.model import Transformer
+from cs336_basics.tokenizer import Tokenizer
 
 # TODO: training loop with config
 # TODO: look for efficiency improvements. Mostly just passing tests at the moment
@@ -30,7 +31,7 @@ class Config:
 '''
 
 
-def train(cfg):
+def train(cfg: Config):
     """Main training loop
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -38,10 +39,7 @@ def train(cfg):
     )
     """
     wandb.login()
-    run = wandb.init(
-        project="Lesson 1 CS336",
-        config={}
-    )
+    run = wandb.init(project="Lesson 1 CS336", config={})
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = Transformer(
@@ -55,7 +53,7 @@ def train(cfg):
         device=device,
         dtype=cfg.dtype,
     )
-    optimizer = AdamW() # cfg.optimizer
+    optimizer = AdamW()  # cfg.optimizer
     train_data = np.load(cfg.train_dataset_path, mmap_mode="r")
     val_data = np.load(cfg.val_dataset_path, mmap_mode="r")
     print(train_data[:15])
@@ -67,9 +65,15 @@ def train(cfg):
         y_pred = model(x)
         loss = cross_entropy(pred=y_pred, targets=y)
         loss.backward()
-
-
-        optimizer.step() # Pass in learning rate?
+        optimizer.clip_gradient(parameters=optimizer.param_groups, max_l2_norm=cfg.max_norm)
+        optimizer.lr = get_lr_cosine(
+            it=step,
+            max_learning_rate=cfg.max_learning_rate,
+            min_learning_rate=cfg.min_learning_rate,
+            warmup_iters=cfg.warmup_iters,
+            cosine_cycle_iters=cfg.cosine_cycle_iters,
+        )
+        optimizer.step()  # Pass in learning rate?
 
         # Logging and validation
         if step % cfg.val_steps == 0:
@@ -77,15 +81,17 @@ def train(cfg):
             y_pred = model(x_val)
             val_loss = cross_entropy(pred=y_pred, targets=y_val)
             wandb.log({"Validation loss": val_loss})
-            # Logging
+            # sample from the model
+            tokenizer = Tokenizer.from_files(vocab_filepath="cs336_basics/vokab-tiny.pkl", merges_filepath="cs336_basics/merges-tiny.pkl")
+            model.sample(tokenizer=tokenizer, prompt="It was a nice day")
+
 
         if step % cfg.logging_steps == 0:
             print(loss)
             wandb.log({"Loss": loss})
 
-
-
-    
+        if step % cfg.saving_steps == 0:
+            save_checkpoint(model=model, optimizer=optimizer, iteration=step, out = cfg.output_folder)
 
 
 def save_checkpoint(
