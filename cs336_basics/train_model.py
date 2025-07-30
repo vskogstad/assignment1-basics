@@ -7,9 +7,9 @@ from typing import IO, BinaryIO, Optional
 # from einops import einsum, rearrange
 import numpy as np
 import torch
-import wandb
 from torch import nn as nn
 
+import wandb
 from cs336_basics.config import Config
 from cs336_basics.model import Transformer
 from cs336_basics.tokenizer import Tokenizer
@@ -39,8 +39,8 @@ def train(cfg: Config):
         "--optimizer", type=torch.optim.Optimizer, help="Optimizer to use"
     )
     """
-    wandb.login()
-    run = wandb.init(project=cfg.wandb_project, config={})
+    # wandb.login()
+    # run = wandb.init(project=cfg.wandb_project, config={})
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = Transformer(
@@ -55,15 +55,19 @@ def train(cfg: Config):
         dtype=cfg.dtype,
     )
     assert cfg.optimizer == "adamw"  # Not setup to use other optimizers yet.
-    optimizer = AdamW()
+    optimizer = AdamW(
+        params=model.parameters(), lr=cfg.max_learning_rate, betas=cfg.betas, weight_decay=cfg.weight_decay, eps=cfg.eps
+    )
     train_data = np.load(cfg.train_dataset_path, mmap_mode="r")
-    val_data = np.load(cfg.val_dataset_path, mmap_mode="r")
+    # val_data = np.load(cfg.val_dataset_path, mmap_mode="r")
     print(train_data[:15])
 
-    torch.cuda.seed_all(cfg.seed)
+    torch.manual_seed(cfg.seed)
+    torch.cuda.manual_seed_all(cfg.seed)
+
     # Training loop
-    for step in cfg.total_steps:
-        x, y = get_batch(dataset=train_data, context_length=cfg.contex_length, device=device)
+    for step in range(cfg.total_steps):
+        x, y = get_batch(dataset=train_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device)
         optimizer.zero_grad()
         y_pred = model(x)
         loss = cross_entropy(pred=y_pred, targets=y)
@@ -188,7 +192,7 @@ class SGD(torch.optim.Optimizer):
 
 
 class AdamW(torch.optim.Optimizer):
-    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), weight_decay=1e-4, eps=1e-8):
+    def __init__(self, params={}, lr=1e-3, betas=(0.9, 0.999), weight_decay=1e-4, eps=1e-8):
         if lr < 0:
             raise ValueError(f"Invalid learning rate: {lr}")
         defaults = {"lr": lr, "betas": betas, "weight_decay": weight_decay, "eps": eps}
@@ -264,7 +268,10 @@ def clip_gradient(parameters, max_l2_norm: float):
 
 
 if __name__ == "__main__":
+    base_config = Config
     base_config = Config.from_yaml("cs336_basics/configs/base.yaml")
+    print(base_config.batch_size)
+    # import sys; sys.exit()
     train(cfg=base_config)
     """
     weights = torch.nn.Parameter(5 * torch.randn((10,10)))

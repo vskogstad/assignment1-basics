@@ -1,0 +1,31 @@
+{
+  "os": "Windows-10-10.0.26100-SP0",
+  "python": "CPython 3.11.11",
+  "startedAt": "2025-07-30T12:06:55.166663Z",
+  "program": "C:\\projects\\stanford\\assignment1-basics\\cs336_basics\\train_model.py",
+  "codePath": "cs336_basics\\train_model.py",
+  "git": {
+    "remote": "https://github.com/vskogstad/assignment1-basics.git",
+    "commit": "86717918c0bb5b3a4fe2651a713f0f9b0bf8b32c"
+  },
+  "email": "skogstadv@gmail.com",
+  "root": "C:\\projects\\stanford\\assignment1-basics",
+  "host": "MIR-L-0021",
+  "executable": "C:\\projects\\stanford\\assignment1-basics\\.venv\\Scripts\\python.exe",
+  "codePathLocal": "cs336_basics\\train_model.py",
+  "cpu_count": 12,
+  "cpu_count_logical": 14,
+  "disk": {
+    "/": {
+      "total": "1023394443264",
+      "used": "193678020608"
+    }
+  },
+  "memory": {
+    "total": "68192501760"
+  },
+  "cpu": {
+    "count": 12,
+    "countLogical": 14
+  }
+}

@@ -1,0 +1,37 @@
+#model configuration
+name: "transformer"
+vocab_size: 10000
+num_layers: 6
+num_heads: 2 # 8
+d_model: 12 #512
+d_ff: 48 #2048
+context_length: 1024
+theta: 1000
+
+# data loading
+train_dataset_path: "data/test_array2.npy"
+val_dataset_path: "data/validation.npy"
+
+# Training configuration
+dtype: "float32"
+batch_size: 2
+min_learning_rate: 0.0001
+max_learning_rate: 0.001
+weight_decay: 0.01
+warmup_steps: 10
+total_steps: 100
+cosine_cycle_steps: 50
+betas: [0.9, 0.999]
+eps: 1e-8
+grad_clip_norm: 1.0
+optimizer: "adamw"
+scheduler: "cosine"
+
+# Experiment configuration
+name: "baseline"
+seed: 42
+log_interval: 100
+eval_interval: 1000
+save_interval: 5000
+output_dir: "outputs"
+wandb_project: "lm_training"
