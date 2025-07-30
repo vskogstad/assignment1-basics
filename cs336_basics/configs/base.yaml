@@ -10,19 +10,19 @@ theta: 1000
 
 # data loading
 train_dataset_path: "data/test_array2.npy"
-val_dataset_path: "data/validation.npy"
+val_dataset_path: "data/test_array.npy"
 
 # Training configuration
 dtype: "float32"
 batch_size: 2
-min_learning_rate: 0.0001
-max_learning_rate: 0.001
+min_learning_rate: 0.001
+max_learning_rate: 0.01
 weight_decay: 0.01
 warmup_steps: 10
-total_steps: 100
-cosine_cycle_steps: 50
+total_steps: 101
+cosine_cycle_steps: 70
 betas: [0.9, 0.999]
-eps: 1e-8
+eps: 1.0e-8
 grad_clip_norm: 1.0
 optimizer: "adamw"
 scheduler: "cosine"
@@ -30,7 +30,7 @@ scheduler: "cosine"
 # Experiment configuration
 name: "baseline"
 seed: 42
-log_interval: 100
+log_interval: 10
 eval_interval: 1000
 save_interval: 5000
 output_dir: "outputs"
