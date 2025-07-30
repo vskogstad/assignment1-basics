@@ -115,7 +115,7 @@ LM Head:    12.7% (M) /  7.4% (L)
 Positional: ~0% (negligible)
 For small models the lm_head is a huge fraction. As we scale up the model it becomes less and less important. If we scale up the sequence length more than model dimensions, Attention will grow larger than ffn.
 
-e) To do one forward pass requires 133.42 TFLOPS
+e) To do one forward pass on XL with extended context requires 133.42 TFLOPS. We see that part of attention is growing quadratically with sequence length.
 FFN:        24.1% 
 Attention:  73.9% 
 LM Head:    2.0% 
