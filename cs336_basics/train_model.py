@@ -3,6 +3,7 @@ import math
 import os
 from collections.abc import Callable, Iterable
 from typing import IO, BinaryIO, Optional
+from einops import einsum, rearrange
 
 # from einops import einsum, rearrange
 import numpy as np
@@ -59,7 +60,7 @@ def train(cfg: Config):
         params=model.parameters(), lr=cfg.max_learning_rate, betas=cfg.betas, weight_decay=cfg.weight_decay, eps=cfg.eps
     )
     train_data = np.load(cfg.train_dataset_path, mmap_mode="r")
-    # val_data = np.load(cfg.val_dataset_path, mmap_mode="r")
+    val_data = np.load(cfg.val_dataset_path, mmap_mode="r")
     print(train_data[:15])
 
     torch.manual_seed(cfg.seed)
@@ -72,7 +73,7 @@ def train(cfg: Config):
         y_pred = model(x)
         loss = cross_entropy(pred=y_pred, targets=y)
         loss.backward()
-        optimizer.clip_gradient(parameters=optimizer.param_groups, max_l2_norm=cfg.max_norm)
+        #optimizer.clip_gradient(parameters=optimizer.param_groups, max_l2_norm=cfg.max_norm)
         optimizer.lr = get_lr_cosine(
             step=step,
             max_learning_rate=cfg.max_learning_rate,
@@ -83,23 +84,24 @@ def train(cfg: Config):
         optimizer.step()  # Pass in learning rate?
 
         # Logging and validation
-        if step % cfg.val_steps == 0:
-            x_val, y_val = get_batch(dataset=val_data, context_length=cfg.context_length, device=device)
-            y_pred = model(x_val)
-            val_loss = cross_entropy(pred=y_pred, targets=y_val)
-            wandb.log({"Validation loss": val_loss})
-            # sample from the model
-            tokenizer = Tokenizer.from_files(
-                vocab_filepath="cs336_basics/vokab-tiny.pkl", merges_filepath="cs336_basics/merges-tiny.pkl"
-            )
-            model.sample(tokenizer=tokenizer, prompt="It was a nice day")
+        if step % cfg.eval_interval == 0:
+            with torch.no_grad():
+                x_val, y_val = get_batch(dataset=val_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device)
+                y_pred = model(x_val)
+                val_loss = cross_entropy(pred=y_pred, targets=y_val)
+                # wandb.log({"Validation loss": val_loss})
+                # sample from the model
+                tokenizer = Tokenizer.from_files(
+                    vocab_filepath="cs336_basics/tokenizer_data/vocab-tiny.pkl", merges_filepath="cs336_basics/tokenizer_data/merges-tiny.pkl"
+                )
+                # model.sample(tokenizer=tokenizer, prompt="It was a nice day")
 
-        if step % cfg.logging_steps == 0:
+        if step % cfg.log_interval == 0:
             print(loss)
-            wandb.log({"Loss": loss})
+            #wandb.log({"Loss": loss})
 
-        if step % cfg.saving_steps == 0:
-            save_checkpoint(model=model, optimizer=optimizer, iteration=step, out=cfg.output_folder)
+        if step % cfg.save_interval == 0:
+            save_checkpoint(model=model, optimizer=optimizer, iteration=step, out=cfg.output_dir)
 
 
 def save_checkpoint(
@@ -152,10 +154,12 @@ def softmax(x: torch.Tensor, dimension: int):
 
 
 def cross_entropy(pred: torch.Tensor, targets: torch.Tensor):
-    """Calculates the negative log likelyhood"""
+    """Calculates the negative log likelihood"""
+    pred = rearrange(pred, "b ... c -> (b ...) c")  # combine batch and eventula sequence dimension
+    targets = rearrange(targets, "b ... -> (b ...)")
     batch_size = pred.size(0)
     max_pred = torch.max(pred, dim=1, keepdim=True).values
-
+    
     pred_shifted = pred - max_pred  # Compute log-sum-exp: log(sum(exp(x_i)))
     log_sum_exp = torch.log(torch.sum(torch.exp(pred_shifted), dim=1, keepdim=True))
 
