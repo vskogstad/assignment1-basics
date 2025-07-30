@@ -1,5 +1,6 @@
 import cProfile
 import pstats
+import pickle
 from collections import Counter
 from typing import BinaryIO
 
@@ -236,28 +237,37 @@ def update_dictionaries(counts: Counter[int], candidates: Counter[int], used_wor
 
     return counts, candidates, used_words, bps
 
+def save_data(vocab, merges, output_name: str):
+    """Saves vocab and merges as .pkl files"""
 
+    base_path = "cs336_basics/tokenizer_data/"
+    vocab_name = base_path / "vocab" / output_name / ".pkl"
+    merges_name = base_path / "merges" / output_name / ".pkl"
+    with open(vocab_name, "wb") as vocab_file:
+        pickle.dump(vocab, vocab_file)
+    with open(merges_name, "wb") as merges_file:
+        pickle.dump(merges, merges_file)
 
 
 
 if __name__ == "__main__":
     
     with cProfile.Profile() as profile:
-        vocab, merges = train_bpe(input_path="data/TinyStoriesV2-GPT4-train.txt", vocab_size=10000, special_tokens=["<|endoftext|>","<|imstart|>"], num_processes=8)#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
+        
+        dataset_path, vocab_size = "data/TinyStoriesV2-GPT4-train.txt", 10000
+        #dataset_path, vocab_size = "data/TinyStoriesV2-GPT4-train.txt", 50000
+        dataset_name = dataset_path.split('/')[-1].split(".")[0]
+        vocab, merges = train_bpe(input_path=dataset_path, vocab_size=vocab_size, special_tokens=["<|endoftext|>","<|imstart|>"], num_processes=8)#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])
         
         result = pstats.Stats(profile)
         result.sort_stats(pstats.SortKey.TIME)
         result.print_stats(10)
         
+        save_data(vocab=vocab, merges=merges, output_name=dataset_name)
+
+              
         longest_token = max(vocab.values(), key=lambda x: len(x.__repr__()))
         print(longest_token)
-
-        import pickle
-        with open("cs336_basics/vocab-tiny.pkl", "wb") as vocab_file:
-            pickle.dump(vocab, vocab_file)
-        with open("cs336_basics/merges-tiny.pkl", "wb") as merges_file:
-            pickle.dump(merges, merges_file)
-        # save data
         import sys; sys.exit()
         import json
         model = {"vocab":vocab, "merges":merges}

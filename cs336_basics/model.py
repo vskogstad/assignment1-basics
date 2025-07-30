@@ -191,10 +191,10 @@ class Transformer(nn.Module):
                     p_accum += p_i
 
                     if p_accum > top_p:
-                        p, indices = 
+                        p, indices = 0, 1
 
                 print(p, indices)
-                x_next = idx[:top_p].multinomial(logits[:top_p], 1)
+                x_next = indices[:top_p].multinomial(logits[:top_p], 1)
                 
                 sequence = torch.cat(x, x_next)
                 if x_next == end_of_text_encoding:

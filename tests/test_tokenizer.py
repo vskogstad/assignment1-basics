@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import os
-import resource
+
+# import resource
 import sys
 
 import psutil
@@ -42,10 +43,10 @@ def get_tokenizer_from_vocab_merges_path(
     special_tokens: list[str] | None = None,
 ):
     gpt2_byte_decoder = {v: k for k, v in gpt2_bytes_to_unicode().items()}
-    with open(vocab_path) as vocab_f:
+    with open(vocab_path, encoding="utf-8") as vocab_f:
         gpt2_vocab = json.load(vocab_f)
     gpt2_bpe_merges = []
-    with open(merges_path) as f:
+    with open(merges_path, encoding="utf-8") as f:
         for line in f:
             cleaned_line = line.rstrip()
             if cleaned_line and len(cleaned_line.split(" ")) == 2:
@@ -325,7 +326,7 @@ def test_tinystories_sample_roundtrip():
         vocab_path=VOCAB_PATH,
         merges_path=MERGES_PATH,
     )
-    with open(FIXTURES_PATH / "tinystories_sample.txt") as f:
+    with open(FIXTURES_PATH / "tinystories_sample.txt", encoding="utf-8") as f:
         corpus_contents = f.read()
 
     ids = tokenizer.encode(corpus_contents)
@@ -338,7 +339,7 @@ def test_tinystories_matches_tiktoken():
         vocab_path=VOCAB_PATH, merges_path=MERGES_PATH, special_tokens=["<|endoftext|>"]
     )
     corpus_path = FIXTURES_PATH / "tinystories_sample.txt"
-    with open(corpus_path) as f:
+    with open(corpus_path, encoding="utf-8") as f:
         corpus_contents = f.read()
     reference_ids = reference_tokenizer.encode(corpus_contents, allowed_special={"<|endoftext|>"})
     ids = tokenizer.encode(corpus_contents)
@@ -386,10 +387,10 @@ def test_encode_iterable_tinystories_sample_roundtrip():
         merges_path=MERGES_PATH,
     )
     all_ids = []
-    with open(FIXTURES_PATH / "tinystories_sample.txt") as f:
+    with open(FIXTURES_PATH / "tinystories_sample.txt", encoding="utf-8") as f:
         for _id in tokenizer.encode_iterable(f):
             all_ids.append(_id)
-    with open(FIXTURES_PATH / "tinystories_sample.txt") as f:
+    with open(FIXTURES_PATH / "tinystories_sample.txt", encoding="utf-8") as f:
         corpus_contents = f.read()
     assert tokenizer.decode(all_ids) == corpus_contents
 
@@ -400,11 +401,11 @@ def test_encode_iterable_tinystories_matches_tiktoken():
         vocab_path=VOCAB_PATH, merges_path=MERGES_PATH, special_tokens=["<|endoftext|>"]
     )
     corpus_path = FIXTURES_PATH / "tinystories_sample.txt"
-    with open(corpus_path) as f:
+    with open(corpus_path, encoding="utf-8") as f:
         corpus_contents = f.read()
     reference_ids = reference_tokenizer.encode(corpus_contents, allowed_special={"<|endoftext|>"})
     all_ids = []
-    with open(FIXTURES_PATH / "tinystories_sample.txt") as f:
+    with open(FIXTURES_PATH / "tinystories_sample.txt", encoding="utf-8") as f:
         for _id in tokenizer.encode_iterable(f):
             all_ids.append(_id)
     assert all_ids == reference_ids

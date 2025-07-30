@@ -10,6 +10,7 @@ import torch
 import wandb
 from torch import nn as nn
 
+from cs336_basics.config import Config
 from cs336_basics.model import Transformer
 from cs336_basics.tokenizer import Tokenizer
 
@@ -39,25 +40,27 @@ def train(cfg: Config):
     )
     """
     wandb.login()
-    run = wandb.init(project="Lesson 1 CS336", config={})
+    run = wandb.init(project=cfg.wandb_project, config={})
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = Transformer(
         vocab_size=cfg.vocab_size,
         num_layers=cfg.num_layers,
-        d_model=cfg.d_model,
         num_heads=cfg.num_heads,
+        d_model=cfg.d_model,
         d_ff=cfg.d_ff,
         context_length=cfg.context_length,
         theta=cfg.theta,
         device=device,
         dtype=cfg.dtype,
     )
-    optimizer = AdamW()  # cfg.optimizer
+    assert cfg.optimizer == "adamw"  # Not setup to use other optimizers yet.
+    optimizer = AdamW()
     train_data = np.load(cfg.train_dataset_path, mmap_mode="r")
     val_data = np.load(cfg.val_dataset_path, mmap_mode="r")
     print(train_data[:15])
 
+    torch.cuda.seed_all(cfg.seed)
     # Training loop
     for step in cfg.total_steps:
         x, y = get_batch(dataset=train_data, context_length=cfg.contex_length, device=device)
@@ -67,11 +70,11 @@ def train(cfg: Config):
         loss.backward()
         optimizer.clip_gradient(parameters=optimizer.param_groups, max_l2_norm=cfg.max_norm)
         optimizer.lr = get_lr_cosine(
-            it=step,
+            step=step,
             max_learning_rate=cfg.max_learning_rate,
             min_learning_rate=cfg.min_learning_rate,
-            warmup_iters=cfg.warmup_iters,
-            cosine_cycle_iters=cfg.cosine_cycle_iters,
+            warmup_steps=cfg.warmup_steps,
+            cosine_cycle_steps=cfg.cosine_cycle_steps,
         )
         optimizer.step()  # Pass in learning rate?
 
@@ -82,16 +85,17 @@ def train(cfg: Config):
             val_loss = cross_entropy(pred=y_pred, targets=y_val)
             wandb.log({"Validation loss": val_loss})
             # sample from the model
-            tokenizer = Tokenizer.from_files(vocab_filepath="cs336_basics/vokab-tiny.pkl", merges_filepath="cs336_basics/merges-tiny.pkl")
+            tokenizer = Tokenizer.from_files(
+                vocab_filepath="cs336_basics/vokab-tiny.pkl", merges_filepath="cs336_basics/merges-tiny.pkl"
+            )
             model.sample(tokenizer=tokenizer, prompt="It was a nice day")
-
 
         if step % cfg.logging_steps == 0:
             print(loss)
             wandb.log({"Loss": loss})
 
         if step % cfg.saving_steps == 0:
-            save_checkpoint(model=model, optimizer=optimizer, iteration=step, out = cfg.output_folder)
+            save_checkpoint(model=model, optimizer=optimizer, iteration=step, out=cfg.output_folder)
 
 
 def save_checkpoint(
@@ -225,15 +229,15 @@ class AdamW(torch.optim.Optimizer):
 
 
 def get_lr_cosine(
-    it: int, max_learning_rate: float, min_learning_rate: float, warmup_iters: int, cosine_cycle_iters: int
+    step: int, max_learning_rate: float, min_learning_rate: float, warmup_steps: int, cosine_cycle_steps: int
 ):
     """Returns a learning rate based on cosine annealing"""
-    if it < warmup_iters:  # Warmup
-        lr = it / warmup_iters * max_learning_rate
-    elif it > cosine_cycle_iters:  # + warmup_iters: # Post Annealing
+    if step < warmup_steps:  # Warmup
+        lr = step / warmup_steps * max_learning_rate
+    elif step > cosine_cycle_steps:  # + warmup_iters: # Post Annealing
         lr = min_learning_rate
     else:  # Cosine annealing
-        part = (it - warmup_iters) / (cosine_cycle_iters - warmup_iters) * math.pi
+        part = (step - warmup_steps) / (cosine_cycle_steps - warmup_steps) * math.pi
         lr = min_learning_rate + 0.5 * (1 + math.cos(part)) * (max_learning_rate - min_learning_rate)
 
     return lr
@@ -260,8 +264,7 @@ def clip_gradient(parameters, max_l2_norm: float):
 
 
 if __name__ == "__main__":
-    from .config import Config
-    base_config = Config
+    base_config = Config.from_yaml("cs336_basics/configs/base.yaml")
     train(cfg=base_config)
     """
     weights = torch.nn.Parameter(5 * torch.randn((10,10)))

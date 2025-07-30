@@ -614,11 +614,11 @@ def run_get_lr_cosine_schedule(
     from cs336_basics.train_model import get_lr_cosine
 
     return get_lr_cosine(
-        it=it,
+        step=it,
         max_learning_rate=max_learning_rate,
         min_learning_rate=min_learning_rate,
-        warmup_iters=warmup_iters,
-        cosine_cycle_iters=cosine_cycle_iters,
+        warmup_steps=warmup_iters,
+        cosine_cycle_steps=cosine_cycle_iters,
     )
 
 
