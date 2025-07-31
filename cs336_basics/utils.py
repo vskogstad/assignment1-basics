@@ -1,4 +1,4 @@
-class Config:
+class ResourceConfig:
     def __init__(self, vocab_size, context_length, num_layers, d_model, num_heads, d_ff, glu=False):
         self.d_model = d_model
         self.vocab_size = vocab_size
@@ -9,6 +9,7 @@ class Config:
 
 
 def resource_accounting(config):
+    """Need to implement GLU-counting if we are to do this exactly for our model"""
     d_model = config.d_model
     vocab_size = config.vocab_size
     num_layers = config.num_layers
@@ -77,11 +78,11 @@ def resource_accounting(config):
 
 
 if __name__ == "__main__":
-    gpt2xl_cfg = Config(vocab_size=50257, context_length=1024, num_layers=48, d_model=1600, num_heads=25, d_ff=6400)
-    gpt2l_cfg = Config(vocab_size=50257, context_length=1024, num_layers=36, d_model=1280, num_heads=20, d_ff=1280 * 4)
-    gpt2m_cfg = Config(vocab_size=50257, context_length=1024, num_layers=24, d_model=1024, num_heads=16, d_ff=1024 * 4)
-    gpt2s_cfg = Config(vocab_size=50257, context_length=1024, num_layers=12, d_model=768, num_heads=12, d_ff=768 * 4)
+    gpt2xl_cfg = ResourceConfig(vocab_size=50257, context_length=1024, num_layers=48, d_model=1600, num_heads=25, d_ff=6400)
+    gpt2l_cfg = ResourceConfig(vocab_size=50257, context_length=1024, num_layers=36, d_model=1280, num_heads=20, d_ff=1280 * 4)
+    gpt2m_cfg = ResourceConfig(vocab_size=50257, context_length=1024, num_layers=24, d_model=1024, num_heads=16, d_ff=1024 * 4)
+    gpt2s_cfg = ResourceConfig(vocab_size=50257, context_length=1024, num_layers=12, d_model=768, num_heads=12, d_ff=768 * 4)
 
     # increased context length
-    gpt2xlxc_cfg = Config(vocab_size=50257, context_length=16384, num_layers=48, d_model=1600, num_heads=25, d_ff=6400)
+    gpt2xlxc_cfg = ResourceConfig(vocab_size=50257, context_length=16384, num_layers=48, d_model=1600, num_heads=25, d_ff=6400)
     resource_accounting(gpt2xlxc_cfg)
