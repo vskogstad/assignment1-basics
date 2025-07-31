@@ -6,9 +6,7 @@ from typing import BinaryIO
 
 from cs336_basics.pretokenization import pretokenize_file
 
-# Latest: Instead of iterating over the entire candidates dict each time. Keep a best_pairs dictionary with a list of n best pairs. 
-#       When adding new tokens to the vocab, iterate over new tokens and at them to the best_pairs list if they are above the minimum threshold in the list. 
-#       Once the value of the highest pair in best_pairs is below the threshold, we can no longer guarantee that it contains the best merging candidate, we then do a full iteration and create a new best_pair list.
+
 # TODO: Implement quick-select for finding good pairs faster
 # TODO: Look at commercial solutions like tiktoken/tekken, how do they achieve good parrallelism?
 
@@ -254,7 +252,7 @@ if __name__ == "__main__":
     
     with cProfile.Profile() as profile:
         
-        dataset_path, vocab_size = "data/TinyStoriesV2-GPT4-train.txt", 10000
+        dataset_path, vocab_size = "data/owt_train.txt", 32000
         #dataset_path, vocab_size = "data/TinyStoriesV2-GPT4-train.txt", 50000
         dataset_name = dataset_path.split('/')[-1].split(".")[0]
         vocab, merges = train_bpe(input_path=dataset_path, vocab_size=vocab_size, special_tokens=["<|endoftext|>","<|imstart|>"], num_processes=8)#TinyStoriesV2-GPT4-valid.txt", vocab_size=270, special_tokens=[])

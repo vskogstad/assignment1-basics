@@ -68,7 +68,6 @@ def train(cfg: Config):
 
     # Training loop
     for step in range(cfg.total_steps):
-        print(step == 0)
         x, y = get_batch(
             dataset=train_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device
         )
@@ -76,6 +75,7 @@ def train(cfg: Config):
         y_pred = model(x)
         loss = cross_entropy(pred=y_pred, targets=y)
         loss.backward()
+
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
         optimizer.lr = get_lr_cosine(
             step=step,
