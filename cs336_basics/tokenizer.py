@@ -252,13 +252,14 @@ class Tokenizer:
         return compression_ratio
 
 
-def file_to_numpy(output: str, text_file: str, tokenizer):
+def to_numpy(self, output: str, text_file: str):
     """Tokenizes a text file into a one-dimensional numpy vector for training"""
     ids = []
     with open(file=text_file, encoding='utf-8') as f:
-        for _id in tokenizer.encode_iterable(f):
+        for _id in self.encode_iterable(f):
             ids.append(_id)
-    np.save(output, arr=ids) #, mmap_mode="w")
+    ids=np.array(ids, dtype="uint16")
+    np.save(output, arr=ids, ) #, mmap_mode="w")
 
 
 if __name__ == "__main__":
