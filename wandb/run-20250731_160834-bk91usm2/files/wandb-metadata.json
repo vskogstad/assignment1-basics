@@ -1,0 +1,41 @@
+{
+  "os": "Windows-10-10.0.26100-SP0",
+  "python": "CPython 3.11.11",
+  "startedAt": "2025-07-31T14:08:34.816899Z",
+  "args": [
+    "--config",
+    "cs336_basics/configs/base_cpu.yaml",
+    "--total_steps",
+    "2001",
+    "--experiment_name",
+    "wandb_test",
+    "--wandb_project",
+    "test_logging"
+  ],
+  "program": "C:\\projects\\stanford\\assignment1-basics\\cs336_basics\\train_model.py",
+  "codePath": "cs336_basics\\train_model.py",
+  "git": {
+    "remote": "https://github.com/vskogstad/assignment1-basics.git",
+    "commit": "1f980d23653557107c2160628151d8b3a7dda578"
+  },
+  "email": "skogstadv@gmail.com",
+  "root": "C:\\projects\\stanford\\assignment1-basics",
+  "host": "MIR-L-0021",
+  "executable": "C:\\projects\\stanford\\assignment1-basics\\.venv\\Scripts\\python.exe",
+  "codePathLocal": "cs336_basics\\train_model.py",
+  "cpu_count": 12,
+  "cpu_count_logical": 14,
+  "disk": {
+    "/": {
+      "total": "1023394443264",
+      "used": "193427025920"
+    }
+  },
+  "memory": {
+    "total": "68192501760"
+  },
+  "cpu": {
+    "count": 12,
+    "countLogical": 14
+  }
+}

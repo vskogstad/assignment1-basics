@@ -1,7 +1,9 @@
 import argparse
 import math
 import os
+import time
 from collections.abc import Callable, Iterable
+from dataclasses import asdict
 from typing import IO, BinaryIO, Optional
 
 # from einops import einsum, rearrange
@@ -11,7 +13,7 @@ from einops import einsum, rearrange
 from torch import nn as nn
 
 import wandb
-from cs336_basics.config import Config
+from cs336_basics.config import Config, get_parser
 from cs336_basics.model import Transformer
 from cs336_basics.tokenizer import Tokenizer
 
@@ -41,22 +43,10 @@ def train(cfg: Config):
     )
     """
     # TODO: No weight decay for rmsn-parameters, only matrixes
-    # TODO: checkpointing logic
-    # wandb.login()
-    # run = wandb.init(project=cfg.wandb_project, config={})
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = Transformer(
-        vocab_size=cfg.vocab_size,
-        num_layers=cfg.num_layers,
-        num_heads=cfg.num_heads,
-        d_model=cfg.d_model,
-        d_ff=cfg.d_ff,
-        context_length=cfg.context_length,
-        theta=cfg.theta,
-        device=device,
-        dtype=cfg.dtype,
-    )
+    model = get_model(cfg, device)
+
     assert cfg.optimizer == "adamw"  # Not setup to use other optimizers yet.
     assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
     optimizer = AdamW(
@@ -65,17 +55,24 @@ def train(cfg: Config):
 
     train_data = np.load(cfg.train_dataset_path, mmap_mode="r")
     val_data = np.load(cfg.val_dataset_path, mmap_mode="r")
-    
+
+    # Initialize logging
+    if cfg.wandb_project:
+        wandb.login()
+        run = wandb.init(project=cfg.wandb_project, config=asdict(cfg))
     step = 0
+    chunk_steps = 0
+    chunk_loss = 0
+    t_0 = time.time_ns()
     torch.manual_seed(cfg.seed)
     torch.cuda.manual_seed_all(cfg.seed)
 
     # Load from checkpoint
-    # TODO: check if we can override total_steps and keep training(works better with other schedulers) or only complete an incomplete run
     if cfg.from_checkpoint:
-        step = load_checkpoint(src=cfg.from_checkpoint, model=model, optimizer=optimizer) + 1 # increment by one, this step has already been done
-        print(step, cfg.total_steps)
-        cfg.total_steps *= 2
+        source = os.path.join(cfg.output_dir, "checkpoints", cfg.from_checkpoint)
+        step = (
+            load_checkpoint(src=source, model=model, optimizer=optimizer) + 1
+        )  # increment by one, this step has already been done
 
     # Training loop
     for step in range(step, cfg.total_steps):
@@ -97,7 +94,32 @@ def train(cfg: Config):
         )
         optimizer.step()  # Pass in learning rate?
 
-        # Logging and validation
+        # Logging
+        chunk_loss += loss.item()
+        chunk_steps += 1
+        if step % cfg.log_interval == 0:
+            loss_accumulated = chunk_loss / chunk_steps
+
+            
+            t_1 = time.time_ns()
+            chunk_time = t_1 - t_0
+            t_0 = time.time_ns()
+            token_per_s = 1e6 * chunk_steps * cfg.batch_size * cfg.context_length / (chunk_time)
+            print(f"step = {step} | Loss = {loss_accumulated:.3f} | {chunk_time = :.3f} | tok/ms = {token_per_s:.3f} | lr = {optimizer.lr}")
+
+            chunk_loss = 0
+            chunk_steps = 0
+            if cfg.wandb_project:
+                run.log(
+                    {
+                        "Step": step,
+                        "Loss": loss_accumulated,
+                        "tok/ms": token_per_s,
+                        "lr": optimizer.lr
+                    }
+                )
+
+        # validation
         if step % cfg.eval_interval == 0:
             model.eval()
             with torch.no_grad():
@@ -116,18 +138,39 @@ def train(cfg: Config):
                 model.sample(tokenizer=tokenizer, prompt="It was a nice day")
             model.train()
 
-        if step % cfg.log_interval == 0:
-            print(step, loss.item())
-            # wandb.log({"Loss": loss})
-
+        # checkpointing
         if step % cfg.save_interval == 0:
-            print("Saving model checkpoint")
             save_checkpoint(
                 model=model,
                 optimizer=optimizer,
                 iteration=step,
-                out=f"{cfg.output_dir}/{cfg.experiment_name}_{step}.pth",
+                out=f"{cfg.output_dir}/checkpoints/{cfg.experiment_name}_{step}.pth",
             )
+
+    if cfg.wandb_project:
+         run.finish()
+
+def get_model(cfg: Config, device):
+    if cfg.model_name == "transformer":
+        return Transformer(
+            vocab_size=cfg.vocab_size,
+            num_layers=cfg.num_layers,
+            num_heads=cfg.num_heads,
+            d_model=cfg.d_model,
+            d_ff=cfg.d_ff,
+            context_length=cfg.context_length,
+            theta=cfg.theta,
+            device=device,
+            dtype=cfg.dtype,
+        )
+    elif cfg.model_name == "silu-transformer":
+        raise NotImplementedError()
+    elif cfg.model_name == "pre-norm-transformer":
+        raise NotImplementedError()
+    elif cfg.model_name == "no-ln-transformer":
+        raise NotImplementedError()
+    else:
+        raise NotImplementedError("Not implemented loading for model {cfg.model_name}")
 
 
 def save_checkpoint(
@@ -302,18 +345,19 @@ def clip_gradient(parameters, max_l2_norm: float):
 
 
 if __name__ == "__main__":
-    base_config = Config
-    base_config = Config.from_yaml("cs336_basics/configs/base.yaml")
-    print(base_config.batch_size)
-    # import sys; sys.exit()
-    train(cfg=base_config)
-    """
-    weights = torch.nn.Parameter(5 * torch.randn((10,10)))
-    opt = SGD([weights], lr=1e3)
-    for i in range(10):
-        opt.zero_grad()
-        #calculate loss
-        loss = (weights**2).mean()
-        print(loss.cpu().item())
-        loss.backward()
-        opt.step()"""
+    # Parse command line arguments
+    parser = get_parser()
+    args = parser.parse_args()
+
+    # load config
+    config = Config.from_yaml(args.config)
+    config.update_from_args(args)
+
+    # Save final config to experiment directory
+    os.makedirs(config.output_dir, exist_ok=True)
+    config.save(os.path.join(config.output_dir, f"{config.experiment_name}_config.yaml"))
+
+    # train the model
+    train(cfg=config)
+
+    # report results

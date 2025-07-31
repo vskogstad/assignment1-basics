@@ -1,3 +1,4 @@
+import argparse
 import os
 from dataclasses import asdict, dataclass
 
@@ -41,7 +42,7 @@ class Config:
     eval_interval: int
     save_interval: int
     output_dir: str
-    wandb_project: str
+    wandb_project: None | str
     from_checkpoint: None | str
 
     @classmethod
@@ -51,13 +52,37 @@ class Config:
 
         with open(file=filepath) as f:
             data = yaml.safe_load(f)
-            print(data)
+            
 
         return cls(**data)
 
     def save(self, filepath: str):
-        with open(file=filepath) as f:
+        with open(file=filepath, mode="w") as f:
             yaml.dump(asdict(self), f, default_flow_style=False)
 
-    def update_form_args(self, args):
-        pass
+    def update_from_args(self, args):
+        for command, value in vars(args).items():
+            #print(command,value)
+            if command == 'config':
+                continue
+            assert hasattr(self, command)
+            if value is not None:
+                setattr(self, command, value)
+
+
+def get_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, required=True, help="Path to YAML config file (required)")
+    parser.add_argument("--experiment_name", type=str)
+    parser.add_argument("--from_checkpoint", type=str)
+    parser.add_argument("--total_steps", type=int)
+    parser.add_argument("--model_name", type=str)
+    parser.add_argument("--warmup_steps", type=int)
+    parser.add_argument("--max_learning_rate", type=int)
+    parser.add_argument("--weight_decay", type=int)
+    parser.add_argument("--eps", type=int)
+    parser.add_argument("--betas", type=tuple)
+    parser.add_argument("--batch_size", type=int)
+    parser.add_argument("--wandb_project", type=str)
+
+    return parser

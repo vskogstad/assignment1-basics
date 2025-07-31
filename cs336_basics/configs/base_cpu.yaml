@@ -1,12 +1,12 @@
 #model configuration
 model_name: "transformer"
 vocab_size: 10000
-num_layers: 4
-num_heads: 16
-d_model: 512
-d_ff: 1344
+num_layers: 6
+num_heads: 2 # 8
+d_model: 12 #512
+d_ff: 48 #2048
 context_length: 256
-theta: 10000
+theta: 1000
 
 # data loading
 train_dataset_path: "data/test_array2.npy"
@@ -30,9 +30,9 @@ scheduler: "cosine"
 # Experiment configuration
 experiment_name: "base_cpu"
 seed: 42
-log_interval: 100
+log_interval: 10
 eval_interval: 500
 save_interval: 1000
 output_dir: "cs336_basics/configs/experiments"
-wandb_project: "lm_training"
+wandb_project: null
 from_checkpoint: null #"cs336_basics/checkpoints/baseline_2000.pth"
