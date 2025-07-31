@@ -5,6 +5,8 @@ import time
 from collections.abc import Iterable, Iterator
 from collections import deque
 from itertools import chain
+import functools
+from concurrent.futures import ThreadPoolExecutor
 
 import regex as re
 
@@ -113,6 +115,44 @@ class Tokenizer:
             
         return list(chain.from_iterable(indeces))
     
+    def encode_ordinary(self, word):
+        # Need this line to work with GPT2-vocab. Can't assume byte_val equals ascii order. 
+        tokens = [self.vocab_to_int[bytes([byte_val])] for byte_val in word]
+        pairs = zip(tokens, tokens[1:])
+        for best_pair in self.merges: # want to iterate over pairs instead, check their self.merges position and merge the lowest one
+            if best_pair not in pairs:
+                continue
+            if len(tokens) < 2: # No more meges possible
+                break
+            a, b = best_pair
+            new_token = a + b
+
+            new_token_id = self.vocab_to_int[new_token]
+            best_pair = self.vocab_to_int[a], self.vocab_to_int[b]
+            skip = False
+            word_tokenization = []
+
+            for c1, c2 in zip(tokens, tokens[1:]):
+
+                if skip:
+                    skip = False
+                    continue
+
+                if best_pair == (c1, c2):
+                    skip = True
+                    #print(f"merging {c1} and {c2} into {new_token_id}")
+                    word_tokenization.append(new_token_id)
+
+                else:
+                    word_tokenization.append(c1)
+            else:
+                if not skip:
+                    word_tokenization.append(c2)
+            tokens = word_tokenization
+            pairs = zip(tokens, tokens[1:])
+        return tokens
+
+
     def encode2(self, text: str) -> list[int]:
         
         escaped = [re.escape(token.decode()) for token in self.special_tokens]
@@ -122,53 +162,27 @@ class Tokenizer:
         SPECIAL = r"|".join(escaped)
         #text = text.encode("utf-8")
         PAT = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
-        segments = []
+        
         try:
             specials = [self.vocab_to_int[spec.encode()] for spec in re.findall(SPECIAL, text)]
-            splitted = re.split(SPECIAL, text)
+            documents = re.split(SPECIAL, text)
         except KeyError:
             specials = []
-            splitted = text
+            documents = text
             #import sys;sys.exit()
         indeces = []
-        # UGLY! 
-        for i, chunk in enumerate(splitted):
-            segments = []
-            for segment in PAT.findall(chunk): 
-                segments.append(segment.encode())
-            for segment in segments:
-                # Need this line to work with GPT2-vocab. Can't assume sorted in ascii order. 
-                segment = [self.vocab_to_int[bytes([byte_val])] for byte_val in segment]
-                for best_pair in self.merges:
-                    if len(segment) < 2: # No more meges possible
-                        break
-                    a, b = best_pair
-                    new_token = a + b
 
-                    new_token_id = self.vocab_to_int[new_token]
-                    best_pair = self.vocab_to_int[a], self.vocab_to_int[b]
-                    skip = False
-                    word_tokenization = []
+        for i, document in enumerate(documents):
+            words = []
+            for subword in PAT.findall(document): 
+                words.append(subword.encode())
 
-                    for c1, c2 in zip(segment, segment[1:]):
-
-                        if skip:
-                            skip = False
-                            continue
-
-                        if best_pair == (c1, c2):
-                            skip = True
-                            #print(f"merging {c1} and {c2} into {new_token_id}")
-                            word_tokenization.append(new_token_id)
-
-                        else:
-                            word_tokenization.append(c1)
-                    else:
-                        if not skip:
-                            word_tokenization.append(c2)
-                    segment = word_tokenization
-                indeces.append(segment)
-            if specials and i < len(splitted) - 1:
+            # can multithread here
+            encoder = functools.partial(self.encode_ordinary)
+            with ThreadPoolExecutor() as executor:
+                indeces.extend(list(executor.map(encoder, words)))
+                
+            if specials and i < len(documents) - 1:
                 indeces.append([specials[i]])
         
         return list(chain.from_iterable(indeces))
