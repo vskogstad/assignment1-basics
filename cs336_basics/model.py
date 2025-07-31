@@ -176,19 +176,19 @@ class Transformer(nn.Module):
         with torch.no_grad():
             sequence = tokenizer.encode(prompt) if prompt else tokenizer.encode("\n")
             response_length = len(sequence)
-            end_of_text_token = tokenizer.encode("<|endoftext|>")
+            end_of_text_token = tokenizer.encode("<|endoftext|>")[0]
+            print()
             sequence = torch.tensor(sequence, dtype=torch.long).unsqueeze(0)
             
             # turn sequence into torch tensor
             while response_length < max_tokens:
                 out = self(sequence)
                 logits = softmax(out, dimension=-1, temp=temp)
-                logits = logits[:,-1,:].squeeze() # Care only about the last word in the sequence, squeeze out dimensions
+                logits = logits[:,-1,:].squeeze() # Care only about the last word(-1) in the sequence, squeeze out other dimensions
 
-                # Implementing top P samling. Inefficient.
+                # Implementing top P samling. Likely inefficient.
                 # Top p samples from the n samples that sum to top_p. Unlike top_k which samples from the k highest probs. n is dynamic, k is fixed.
-                #print(max(logits), logits.shape)
-                p, indices = torch.sort(logits)
+                p, indices = torch.sort(logits) 
                 i = 0
                 p_accum = 0
                 while p_accum < top_p:
@@ -196,10 +196,8 @@ class Transformer(nn.Module):
                     i += 1
                 p_mod = p[:i] / p_accum
                 indices_mod = indices[:i]
-                #print(p_mod, sum(p_mod))
-                #print(indices[:i])
-                next_token = random.choices(population=indices_mod, weights=p_mod, k=1)[-1].unsqueeze(0).unsqueeze(0)
-                #print(f"{sequence=} | {next_token=} ")
+                next_token = random.choices(population=indices_mod, weights=p_mod, k=1)[-1].unsqueeze(0).unsqueeze(0) # adding additional dimensions
+                
                 sequence = torch.cat((sequence, next_token), dim=-1)
                 response_length += 1
                 if next_token == end_of_text_token:

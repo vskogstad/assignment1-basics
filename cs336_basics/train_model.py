@@ -40,6 +40,8 @@ def train(cfg: Config):
         "--optimizer", type=torch.optim.Optimizer, help="Optimizer to use"
     )
     """
+    # TODO: No weight decay for rmsn-parameters, only matrixes
+    # TODO: checkpointing logic
     # wandb.login()
     # run = wandb.init(project=cfg.wandb_project, config={})
 
@@ -56,18 +58,27 @@ def train(cfg: Config):
         dtype=cfg.dtype,
     )
     assert cfg.optimizer == "adamw"  # Not setup to use other optimizers yet.
+    assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
     optimizer = AdamW(
         params=model.parameters(), lr=cfg.max_learning_rate, betas=cfg.betas, weight_decay=cfg.weight_decay, eps=cfg.eps
     )
+
     train_data = np.load(cfg.train_dataset_path, mmap_mode="r")
     val_data = np.load(cfg.val_dataset_path, mmap_mode="r")
-    print(train_data[:15])
-
+    
+    step = 0
     torch.manual_seed(cfg.seed)
     torch.cuda.manual_seed_all(cfg.seed)
 
+    # Load from checkpoint
+    # TODO: check if we can override total_steps and keep training(works better with other schedulers) or only complete an incomplete run
+    if cfg.from_checkpoint:
+        step = load_checkpoint(src=cfg.from_checkpoint, model=model, optimizer=optimizer) + 1 # increment by one, this step has already been done
+        print(step, cfg.total_steps)
+        cfg.total_steps *= 2
+
     # Training loop
-    for step in range(cfg.total_steps):
+    for step in range(step, cfg.total_steps):
         x, y = get_batch(
             dataset=train_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device
         )
@@ -104,12 +115,19 @@ def train(cfg: Config):
                 print(f"Sampling from the model at step {step} with validation loss {val_loss}\n\n")
                 model.sample(tokenizer=tokenizer, prompt="It was a nice day")
             model.train()
+
         if step % cfg.log_interval == 0:
-            print(loss)
+            print(step, loss.item())
             # wandb.log({"Loss": loss})
 
         if step % cfg.save_interval == 0:
-            save_checkpoint(model=model, optimizer=optimizer, iteration=step, out=cfg.output_dir)
+            print("Saving model checkpoint")
+            save_checkpoint(
+                model=model,
+                optimizer=optimizer,
+                iteration=step,
+                out=f"{cfg.output_dir}/{cfg.experiment_name}_{step}.pth",
+            )
 
 
 def save_checkpoint(
@@ -120,15 +138,19 @@ def save_checkpoint(
 ):
     checkpoint = {"model": model.state_dict(), "optimizer": optimizer.state_dict(), "iteration": iteration}
     # write to output path
+    print(f"Saving checkpoint to {out}")
     torch.save(checkpoint, out)
 
 
 def load_checkpoint(
     src: str | os.PathLike | BinaryIO | IO[bytes], model: torch.nn.Module, optimizer: torch.optim.Optimizer
 ):
+    if not os.path.exists(src):
+        raise FileNotFoundError(f"Checkpoint not found at {src}")
     checkpoint = torch.load(src)
     model.load_state_dict(checkpoint["model"])
     optimizer.load_state_dict(checkpoint["optimizer"])
+    print(f"Loading checkpoint from {src}")
     return checkpoint["iteration"]
 
 

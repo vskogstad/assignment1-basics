@@ -1,11 +1,12 @@
-from dataclasses import dataclass, asdict
 import os
+from dataclasses import asdict, dataclass
+
 import yaml
 
 
 @dataclass
 class Config:
-    name: str
+    model_name: str
     vocab_size: int
     num_layers: int
     num_heads: int
@@ -34,26 +35,26 @@ class Config:
     scheduler: str
 
     # Experiment
-    name: str
+    experiment_name: str
     seed: int
     log_interval: int
     eval_interval: int
     save_interval: int
     output_dir: str
     wandb_project: str
+    from_checkpoint: None | str
 
     @classmethod
     def from_yaml(cls, filepath: str):
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"Configuration file not found at {filepath}")
-        
+
         with open(file=filepath) as f:
             data = yaml.safe_load(f)
             print(data)
 
         return cls(**data)
 
-    
     def save(self, filepath: str):
         with open(file=filepath) as f:
             yaml.dump(asdict(self), f, default_flow_style=False)
