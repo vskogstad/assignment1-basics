@@ -88,6 +88,7 @@ def train(cfg: Config):
 
         # Logging and validation
         if step % cfg.eval_interval == 0:
+            model.eval()
             with torch.no_grad():
                 x_val, y_val = get_batch(
                     dataset=val_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device
@@ -100,8 +101,9 @@ def train(cfg: Config):
                     vocab_filepath="cs336_basics/tokenizer_data/vocab-tiny.pkl",
                     merges_filepath="cs336_basics/tokenizer_data/merges-tiny.pkl",
                 )
-                # model.sample(tokenizer=tokenizer, prompt="It was a nice day")
-
+                print(f"Sampling from the model at step {step} with validation loss {val_loss}\n\n")
+                model.sample(tokenizer=tokenizer, prompt="It was a nice day")
+            model.train()
         if step % cfg.log_interval == 0:
             print(loss)
             # wandb.log({"Loss": loss})

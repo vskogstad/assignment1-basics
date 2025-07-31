@@ -5,7 +5,7 @@ num_layers: 6
 num_heads: 2 # 8
 d_model: 12 #512
 d_ff: 48 #2048
-context_length: 1024
+context_length: 256
 theta: 1000
 
 # data loading
@@ -19,7 +19,7 @@ min_learning_rate: 0.001
 max_learning_rate: 0.01
 weight_decay: 0.01
 warmup_steps: 10
-total_steps: 101
+total_steps: 1000
 cosine_cycle_steps: 70
 betas: [0.9, 0.999]
 eps: 1.0e-8
@@ -31,7 +31,7 @@ scheduler: "cosine"
 name: "baseline"
 seed: 42
 log_interval: 10
-eval_interval: 1000
+eval_interval: 500
 save_interval: 5000
 output_dir: "cs336_basics/checkpoints"
 wandb_project: "lm_training"
