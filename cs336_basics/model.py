@@ -1,4 +1,5 @@
 import math
+import random
 
 import torch
 from einops import einsum, rearrange
@@ -170,38 +171,42 @@ class Transformer(nn.Module):
         # y = softmax(x=x, dimension=-1)
         return x  # y
 
-    def sample(self, tokenizer, prompt: str | None = None, max_tokens: int = 256, temp: int = 0, top_p: int = 1):
-        torch.eval()
+    def sample(self, tokenizer, prompt: str | None = None, max_tokens: int = 256, temp: int = 1, top_p: int = 0.5):
+        
         with torch.no_grad():
             sequence = tokenizer.encode(prompt) if prompt else tokenizer.encode("\n")
-            end_of_text_encoding = tokenizer.encode("<|endoftext|>")
-            sequence = torch.tensor(sequence, dtype=torch.long)
+            response_length = len(sequence)
+            end_of_text_token = tokenizer.encode("<|endoftext|>")
+            sequence = torch.tensor(sequence, dtype=torch.long).unsqueeze(0)
+            
             # turn sequence into torch tensor
-            while len(sequence < max_tokens):
+            while response_length < max_tokens:
                 out = self(sequence)
-                logits = softmax(out, dimension=-1, temp=temp)  # Need to implement this when tests are working
+                logits = softmax(out, dimension=-1, temp=temp)
+                logits = logits[:,-1,:].squeeze() # Care only about the last word in the sequence, squeeze out dimensions
 
-                # Implementing top P samling.
+                # Implementing top P samling. Inefficient.
                 # Top p samples from the n samples that sum to top_p. Unlike top_k which samples from the k highest probs. n is dynamic, k is fixed.
-                print(logits)
-
+                #print(max(logits), logits.shape)
                 p, indices = torch.sort(logits)
+                i = 0
                 p_accum = 0
-                for p_i in p:
-                    p_accum += p_i
-
-                    if p_accum > top_p:
-                        p, indices = 0, 1
-
-                print(p, indices)
-                x_next = indices[:top_p].multinomial(logits[:top_p], 1)
-                
-                sequence = torch.cat(x, x_next)
-                if x_next == end_of_text_encoding:
+                while p_accum < top_p:
+                    p_accum += p[i]
+                    i += 1
+                p_mod = p[:i] / p_accum
+                indices_mod = indices[:i]
+                #print(p_mod, sum(p_mod))
+                #print(indices[:i])
+                next_token = random.choices(population=indices_mod, weights=p_mod, k=1)[-1].unsqueeze(0).unsqueeze(0)
+                #print(f"{sequence=} | {next_token=} ")
+                sequence = torch.cat((sequence, next_token), dim=-1)
+                response_length += 1
+                if next_token == end_of_text_token:
                     break
                 
-
-        return sequence
+        print(tokenizer.decode(sequence.squeeze().tolist()))
+        return 
 
 
 class RoPE(nn.Module):
@@ -334,10 +339,11 @@ class MultiHeadAttention(nn.Module):
 
 
 @staticmethod
-def softmax(x: torch.Tensor, dimension: int):
+def softmax(x: torch.Tensor, dimension: int, temp: int = 1):
     """TODO: Check stability of this might be better with just torch.max(x)"""
     max_x = torch.max(x[dimension])
-    result = torch.exp(x - max_x) / torch.sum(torch.exp(x - max_x), dim=dimension, keepdim=True)
+    x_mod = (x - max_x) / temp
+    result = torch.exp(x_mod) / torch.sum(torch.exp(x_mod), dim=dimension, keepdim=True)
     return result
 
 
