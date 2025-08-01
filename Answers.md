@@ -49,22 +49,22 @@ b' accomplishment'
 
 Heuristic sizing of good pairs with hyperparameter = 10, 8 processes and multithreaded encoding. 3.06 hours. Switched to doing encoding out of multithreaded part and saw speedups on other datasests afterwards. Could likely see further improvements here. 
       
-         1735332825 function calls (1735332645 primitive calls) in 11018.474 seconds
+         1741934743 function calls (1741934563 primitive calls) in 10914.034 seconds
 
    Ordered by: internal time
-   List reduced from 509 to 10 due to restriction <10>
+   List reduced from 510 to 10 due to restriction <10>
 
    ncalls  tottime  percall  cumtime  percall filename:lineno(function)
-    31742 9421.821    0.297 9425.142    0.297 /home/vegard/projects/stanford/assignment1-basics/cs336_basics/train_bpe.py:62(find_best_pair)
-       19  811.573   42.714  811.573   42.714 {method 'acquire' of '_thread.lock' objects}
-    31742  447.535    0.014  724.225    0.023 /home/vegard/projects/stanford/assignment1-basics/cs336_basics/train_bpe.py:134(update_dictionaries)
-304839051   92.894    0.000   92.894    0.000 /home/vegard/projects/stanford/assignment1-basics/cs336_basics/train_bpe.py:195(<genexpr>)
-288643714   63.660    0.000   63.660    0.000 {method 'add' of 'set' objects}
-227115374   45.823    0.000   45.823    0.000 {method 'remove' of 'set' objects}
-267020936   36.078    0.000   36.078    0.000 /home/vegard/projects/stanford/assignment1-basics/cs336_basics/train_bpe.py:196(<genexpr>)
-        1   32.440   32.440   48.709   48.709 /home/vegard/projects/stanford/assignment1-basics/cs336_basics/train_bpe.py:48(find_initial_merge_candidates)
-294497648   28.426    0.000   28.426    0.000 {method 'get' of 'dict' objects}
-267066646   14.648    0.000   14.648    0.000 {method 'append' of 'list' objects}
+    31742 9628.374    0.303 9631.985    0.303 /home/vegard/projects/stanford/assignment1-basics/cs336_basics/train_bpe.py:63(find_best_pair)
+    31742  476.556    0.015  768.708    0.024 /home/vegard/projects/stanford/assignment1-basics/cs336_basics/train_bpe.py:134(update_dictionaries)
+       19  448.042   23.581  448.042   23.581 {method 'acquire' of '_thread.lock' objects}
+304839051   91.334    0.000   91.334    0.000 /home/vegard/projects/stanford/assignment1-basics/cs336_basics/train_bpe.py:197(<genexpr>)
+288643714   66.422    0.000   66.422    0.000 {method 'add' of 'set' objects}
+227115374   48.375    0.000   48.375    0.000 {method 'remove' of 'set' objects}
+267020936   44.095    0.000   44.095    0.000 /home/vegard/projects/stanford/assignment1-basics/cs336_basics/train_bpe.py:198(<genexpr>)
+        1   35.459   35.459   52.107   52.107 /home/vegard/projects/stanford/assignment1-basics/cs336_basics/train_bpe.py:49(find_initial_merge_candidates)
+294497648   30.927    0.000   30.927    0.000 {method 'get' of 'dict' objects}
+267066646   15.760    0.000   15.760    0.000 {method 'append' of 'list' objects}
 
 
 b'\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82'
@@ -75,9 +75,9 @@ b) The tokenizers reflect the information contained in the datasets. As owt is a
 
 **Tokenizer_experiments**
 
-a) Compression ratio on TinyStories/OpenWebText is: / . 
+a) Compression ratio on TinyStories/OpenWebText is: 4.043/4.510. 
 
-b) Compression on OpenWebText with Tinystories tokenizer reduces the compression to . The vocabulary is not adapted to the source material.
+b) Compression on OpenWebText with Tinystories tokenizer reduces the compression from 4.043 to 3.375. The vocabulary of the tokenizer is not adapted to the source material.
 
 c) Throughput in MB/s = . Estimated time spent = 825 * 1024 **4 (bytes) / Throughput  (bytes/s) =  (s) or 
 
