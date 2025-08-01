@@ -22,6 +22,7 @@ class Tokenizer:
         """
         self.vocab = vocab
         self.merges = merges
+        self.merges2 = {merge: i for i, merge in enumerate(merges)}
         #print(f" This is before adding anything {vocab[50256]=}")
         # find special tokens in vocab as well as additional
         self.special_tokens = [tok for id, tok in vocab.items() if str(tok).startswith("b'<|")]
@@ -115,7 +116,7 @@ class Tokenizer:
             
         return list(chain.from_iterable(indeces))
     
-    def encode_ordinary(self, word):
+    def encode_ordinary_bu(self, word):
         # Need this line to work with GPT2-vocab. Can't assume byte_val equals ascii order. 
         tokens = [self.vocab_to_int[bytes([byte_val])] for byte_val in word]
         pairs = zip(tokens, tokens[1:])
@@ -151,7 +152,54 @@ class Tokenizer:
             tokens = word_tokenization
             pairs = zip(tokens, tokens[1:])
         return tokens
+    
+    def encode_ordinary(self, word):
+        # Need this line to work with GPT2-vocab. Can't assume byte_val equals ascii order. 
+        print(word)
+        #tokens = [self.vocab_to_int[bytes([byte_val])] for byte_val in word]
+        #print(tokens)
+        pairs = list(zip(tokens, tokens[1:]))
 
+        while len(tokens) > 1: # Until no more merges possible
+            # find best pair
+            best_index = 5e12
+            best_pair = None
+            #print(pairs, self.merges2.keys())
+            for pair in pairs:
+                print(pair)
+                if self.merges2[pair] < best_index:
+                    best_index = self.merges2[pair]
+                    best_pair = pair
+
+            # merge
+            import sys; sys.exit()
+            a, b = best_pair
+            new_token = a + b
+
+            new_token_id = self.vocab_to_int[new_token]
+            best_pair = self.vocab_to_int[a], self.vocab_to_int[b]
+            skip = False
+            word_tokenization = []
+
+            for c1, c2 in zip(tokens, tokens[1:]):
+
+                if skip:
+                    skip = False
+                    continue
+
+                if best_pair == (c1, c2):
+                    skip = True
+                    #print(f"merging {c1} and {c2} into {new_token_id}")
+                    word_tokenization.append(new_token_id)
+
+                else:
+                    word_tokenization.append(c1)
+            else:
+                if not skip:
+                    word_tokenization.append(c2)
+            tokens = word_tokenization
+            pairs = zip(tokens, tokens[1:])
+        return tokens
 
     def encode2(self, text: str) -> list[int]:
         
@@ -220,7 +268,7 @@ class Tokenizer:
                             self.buffer = ""
                         else:
                             raise StopIteration
-                    self.tokens = deque(self.tokenizer.encode(chunk)) # Reverse even faster?
+                    self.tokens = deque(self.tokenizer.encode2(chunk)) # Reverse even faster?
 
                 return self.tokens.popleft()
         return EncodingIterator(self, iterable)
@@ -279,26 +327,16 @@ def to_numpy(self, output: str, text_file: str):
 if __name__ == "__main__":
 
     special_tokens = ["<|imstart|>","<|endoftext|>"]
-    with open("cs336_basics/vocab-tiny.pkl", "rb") as vocab_file:
-        vocab = pickle.load(vocab_file)
-    with open("cs336_basics/merges-tiny.pkl", "rb") as merges_file:
-        merges = pickle.load(merges_file)
-    # with open("/home/vegard/projects/stanford/assignment1-basics/tests/fixtures/gpt2_vocab.json", "rb") as vocab_file:
-    #     vocab = json.load(vocab_file)
-    # with open("/home/vegard/projects/stanford/assignment1-basics/tests/fixtures/train-bpe-reference-merges.txt", "rb") as merges_file:
-    #     merges = merges_file.read
-    #with open("cs336_basics/tokenizer_tinystories.json","r") as f:
-    #        vocab, merges = json.load(fp=f ) #json.dump(model, f, default=repr, indent=4)
-    tokenizer = Tokenizer.from_files(vocab_filepath="cs336_basics/vocab-tiny.pkl", merges_filepath="cs336_basics/merges-tiny.pkl", special_tokens=special_tokens)
+    tokenizer = Tokenizer.from_files(vocab_filepath="cs336_basics/tokenizer_data/vocab_owt_train.pkl", merges_filepath="cs336_basics/tokenizer_data/merges_owt_train.pkl", special_tokens=special_tokens)
     print(type(tokenizer.vocab), type(tokenizer.merges))
-    enc = tokenizer.encode("Lets test how lucky we can get")
+    enc = tokenizer.encode2("Lets test how lucky we can get")
     print(enc)
     dec = tokenizer.decode(enc)
     print(dec)
     
     ## 
     #file_to_numpy(output=r"cs336_basics/test_array3", text_file=r"data/sample_tiny.txt", tokenizer=tokenizer)
-    tokenizer.throughput(filename="data/TinyStoriesV2-GPT4-valid.txt", tokenizer=tokenizer) 
+    tokenizer.throughput(filename="data/sample_owt.txt", tokenizer=tokenizer) 
     import sys; sys.exit()
 
     # Test throughput
