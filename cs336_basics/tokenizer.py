@@ -22,7 +22,7 @@ class Tokenizer:
         """
         self.vocab = vocab
         self.merges = merges
-        self.merges2 = {merge: i for i, merge in enumerate(merges)}
+        #self.merges2 = {merge: i for i, merge in enumerate(merges)}
         #print(f" This is before adding anything {vocab[50256]=}")
         # find special tokens in vocab as well as additional
         self.special_tokens = [tok for id, tok in vocab.items() if str(tok).startswith("b'<|")]
@@ -46,162 +46,50 @@ class Tokenizer:
             merges = pickle.load(merges_file)
         return cls(vocab=vocab, merges=merges, special_tokens=special_tokens)
         
-    def encode(self, text: str) -> list[int]:
-        
-        escaped = [re.escape(token.decode()) for token in self.special_tokens]
-        # regex finishes at first match. if we sort by length desc, we will get substrings of longer strings at the end. 
-        # matching <|endoftext|><|endoftext|> before <|endoftext|>
-        escaped.sort(key=len, reverse=True)
-        SPECIAL = r"|".join(escaped)
-        #text = text.encode("utf-8")
-        PAT = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
-        segments = []
-        try:
-            specials = [self.vocab_to_int[spec.encode()] for spec in re.findall(SPECIAL, text)]
-            splitted = re.split(SPECIAL, text)
-        except KeyError:
-            specials = []
-            splitted = text
-            #import sys;sys.exit()
-        indeces = []
-        # UGLY! 
-        for i, chunk in enumerate(splitted):
-                segments = []
-                for segment in PAT.findall(chunk): 
-                    segments.append(segment.encode())
-                
-                for segment in segments:
-                    # Convert to token IDs
-                    segment = [self.vocab_to_int[bytes([byte_val])] for byte_val in segment]
-                    
-                    # OPTIMIZED MERGE PROCESS
-                    while len(segment) >= 2:
-                        # Find all pairs in current segment and their positions
-                        pairs_in_segment = {}
-                        for idx in range(len(segment) - 1):
-                            pair = (segment[idx], segment[idx + 1])
-                            if pair not in pairs_in_segment:
-                                pairs_in_segment[pair] = []
-                            pairs_in_segment[pair].append(idx)
-                        
-                        # Find the highest priority merge that exists in this segment
-                        best_merge_idx = None
-                        best_pair = None
-                        
-                        for merge_idx, merge_bytes in enumerate(self.merges):
-                            a, b = merge_bytes
-                            pair_ids = (self.vocab_to_int[a], self.vocab_to_int[b])
-                            if pair_ids in pairs_in_segment:
-                                best_merge_idx = merge_idx
-                                best_pair = pair_ids
-                                break  # Found highest priority merge
-                        
-                        if best_pair is None:
-                            break  # No more merges possible
-                        
-                        # Apply the best merge
-                        new_token = self.merges[best_merge_idx][0] + self.merges[best_merge_idx][1]
-                        new_token_id = self.vocab_to_int[new_token]
-                        
-                        # Merge all instances of this pair (from right to left to avoid index shifting)
-                        positions = pairs_in_segment[best_pair]
-                        for pos in reversed(positions):
-                            if pos < len(segment) - 1 and segment[pos] == best_pair[0] and segment[pos + 1] == best_pair[1]:
-                                segment[pos:pos + 2] = [new_token_id]
-                    
-                    indeces.append(segment)
-                
-                if specials and i < len(splitted) - 1:
-                    indeces.append([specials[i]])
-            
-        return list(chain.from_iterable(indeces))
-    
-    def encode_ordinary_bu(self, word):
-        # Need this line to work with GPT2-vocab. Can't assume byte_val equals ascii order. 
-        tokens = [self.vocab_to_int[bytes([byte_val])] for byte_val in word]
-        pairs = zip(tokens, tokens[1:])
-        for best_pair in self.merges: # want to iterate over pairs instead, check their self.merges position and merge the lowest one
-            if best_pair not in pairs:
-                continue
-            if len(tokens) < 2: # No more meges possible
-                break
-            a, b = best_pair
-            new_token = a + b
 
-            new_token_id = self.vocab_to_int[new_token]
-            best_pair = self.vocab_to_int[a], self.vocab_to_int[b]
-            skip = False
-            word_tokenization = []
-
-            for c1, c2 in zip(tokens, tokens[1:]):
-
-                if skip:
-                    skip = False
-                    continue
-
-                if best_pair == (c1, c2):
-                    skip = True
-                    #print(f"merging {c1} and {c2} into {new_token_id}")
-                    word_tokenization.append(new_token_id)
-
-                else:
-                    word_tokenization.append(c1)
-            else:
-                if not skip:
-                    word_tokenization.append(c2)
-            tokens = word_tokenization
-            pairs = zip(tokens, tokens[1:])
-        return tokens
-    
+    @functools.lru_cache(1024)
     def encode_ordinary(self, word):
-        # Need this line to work with GPT2-vocab. Can't assume byte_val equals ascii order. 
-        print(word)
-        #tokens = [self.vocab_to_int[bytes([byte_val])] for byte_val in word]
-        #print(tokens)
-        pairs = list(zip(tokens, tokens[1:]))
-
-        while len(tokens) > 1: # Until no more merges possible
-            # find best pair
-            best_index = 5e12
+        segment = [self.vocab_to_int[bytes([byte_val])] for byte_val in word]
+                
+        # OPTIMIZED MERGE PROCESS
+        while len(segment) >= 2:
+            # Find all pairs in current segment and their positions
+            pairs_in_segment = {}
+            for idx in range(len(segment) - 1):
+                pair = (segment[idx], segment[idx + 1])
+                if pair not in pairs_in_segment:
+                    pairs_in_segment[pair] = []
+                pairs_in_segment[pair].append(idx)
+            
+            # Find the highest priority merge that exists in this segment
+            best_merge_idx = None
             best_pair = None
-            #print(pairs, self.merges2.keys())
-            for pair in pairs:
-                print(pair)
-                if self.merges2[pair] < best_index:
-                    best_index = self.merges2[pair]
-                    best_pair = pair
-
-            # merge
-            import sys; sys.exit()
-            a, b = best_pair
-            new_token = a + b
-
+            
+            for merge_idx, merge_bytes in enumerate(self.merges):
+                a, b = merge_bytes
+                pair_ids = (self.vocab_to_int[a], self.vocab_to_int[b])
+                if pair_ids in pairs_in_segment:
+                    best_merge_idx = merge_idx
+                    best_pair = pair_ids
+                    break  # Found highest priority merge
+            
+            if best_pair is None:
+                break  # No more merges possible
+            
+            # Apply the best merge
+            new_token = self.merges[best_merge_idx][0] + self.merges[best_merge_idx][1]
             new_token_id = self.vocab_to_int[new_token]
-            best_pair = self.vocab_to_int[a], self.vocab_to_int[b]
-            skip = False
-            word_tokenization = []
+            
+            # Merge all instances of this pair (from right to left to avoid index shifting)
+            positions = pairs_in_segment[best_pair]
+            for pos in reversed(positions):
+                if pos < len(segment) - 1 and segment[pos] == best_pair[0] and segment[pos + 1] == best_pair[1]:
+                    segment[pos:pos + 2] = [new_token_id]
+        
+        return segment
+    
 
-            for c1, c2 in zip(tokens, tokens[1:]):
-
-                if skip:
-                    skip = False
-                    continue
-
-                if best_pair == (c1, c2):
-                    skip = True
-                    #print(f"merging {c1} and {c2} into {new_token_id}")
-                    word_tokenization.append(new_token_id)
-
-                else:
-                    word_tokenization.append(c1)
-            else:
-                if not skip:
-                    word_tokenization.append(c2)
-            tokens = word_tokenization
-            pairs = zip(tokens, tokens[1:])
-        return tokens
-
-    def encode2(self, text: str) -> list[int]:
+    def encode(self, text: str) -> list[int]:
         
         escaped = [re.escape(token.decode()) for token in self.special_tokens]
         # regex finishes at first match. if we sort by length desc, we will get substrings of longer strings at the end. 
@@ -227,8 +115,9 @@ class Tokenizer:
 
             # can multithread here
             encoder = functools.partial(self.encode_ordinary)
-            with ThreadPoolExecutor() as executor:
-                indeces.extend(list(executor.map(encoder, words)))
+            
+            #with ThreadPoolExecutor() as executor:
+            indeces.extend(list(map(encoder, words)))
                 
             if specials and i < len(documents) - 1:
                 indeces.append([specials[i]])
@@ -268,7 +157,7 @@ class Tokenizer:
                             self.buffer = ""
                         else:
                             raise StopIteration
-                    self.tokens = deque(self.tokenizer.encode2(chunk)) # Reverse even faster?
+                    self.tokens = deque(self.tokenizer.encode(chunk)) # Reverse even faster?
 
                 return self.tokens.popleft()
         return EncodingIterator(self, iterable)
@@ -329,24 +218,97 @@ if __name__ == "__main__":
     special_tokens = ["<|imstart|>","<|endoftext|>"]
     tokenizer = Tokenizer.from_files(vocab_filepath="cs336_basics/tokenizer_data/vocab_owt_train.pkl", merges_filepath="cs336_basics/tokenizer_data/merges_owt_train.pkl", special_tokens=special_tokens)
     print(type(tokenizer.vocab), type(tokenizer.merges))
-    enc = tokenizer.encode2("Lets test how lucky we can get")
+    enc = tokenizer.encode("Lets test how lucky we can get")
     print(enc)
     dec = tokenizer.decode(enc)
     print(dec)
     
     ## 
     #file_to_numpy(output=r"cs336_basics/test_array3", text_file=r"data/sample_tiny.txt", tokenizer=tokenizer)
-    tokenizer.throughput(filename="data/sample_owt.txt", tokenizer=tokenizer) 
-    import sys; sys.exit()
+    
+
+    
 
     # Test throughput
     import cProfile
     import pstats
     with cProfile.Profile() as profile:
-        tokenizer.throughput(filename="data/sample_owt.txt", tokenizer=tokenizer)
         tokenizer.throughput(filename="data/sample_tiny.txt", tokenizer=tokenizer) 
+        #import sys; sys.exit()
+        #tokenizer.throughput(filename="data/sample_tiny.txt", tokenizer=tokenizer) 
         
         result = pstats.Stats(profile)
         result.sort_stats(pstats.SortKey.TIME)
         result.print_stats(10)
     
+
+'''    def encode_passing_test(self, text: str) -> list[int]:
+        
+        escaped = [re.escape(token.decode()) for token in self.special_tokens]
+        # regex finishes at first match. if we sort by length desc, we will get substrings of longer strings at the end. 
+        # matching <|endoftext|><|endoftext|> before <|endoftext|>
+        escaped.sort(key=len, reverse=True)
+        SPECIAL = r"|".join(escaped)
+        #text = text.encode("utf-8")
+        PAT = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
+        segments = []
+        try:
+            specials = [self.vocab_to_int[spec.encode()] for spec in re.findall(SPECIAL, text)]
+            splitted = re.split(SPECIAL, text)
+        except KeyError:
+            specials = []
+            splitted = text
+            #import sys;sys.exit()
+        indeces = []
+        # UGLY! 
+        for i, chunk in enumerate(splitted):
+            segments = []
+            for segment in PAT.findall(chunk): 
+                segments.append(segment.encode())
+            
+            for segment in segments:
+                # Convert to token IDs
+                segment = [self.vocab_to_int[bytes([byte_val])] for byte_val in segment]
+                
+                # OPTIMIZED MERGE PROCESS
+                while len(segment) >= 2:
+                    # Find all pairs in current segment and their positions
+                    pairs_in_segment = {}
+                    for idx in range(len(segment) - 1):
+                        pair = (segment[idx], segment[idx + 1])
+                        if pair not in pairs_in_segment:
+                            pairs_in_segment[pair] = []
+                        pairs_in_segment[pair].append(idx)
+                    
+                    # Find the highest priority merge that exists in this segment
+                    best_merge_idx = None
+                    best_pair = None
+                    
+                    for merge_idx, merge_bytes in enumerate(self.merges):
+                        a, b = merge_bytes
+                        pair_ids = (self.vocab_to_int[a], self.vocab_to_int[b])
+                        if pair_ids in pairs_in_segment:
+                            best_merge_idx = merge_idx
+                            best_pair = pair_ids
+                            break  # Found highest priority merge
+                    
+                    if best_pair is None:
+                        break  # No more merges possible
+                    
+                    # Apply the best merge
+                    new_token = self.merges[best_merge_idx][0] + self.merges[best_merge_idx][1]
+                    new_token_id = self.vocab_to_int[new_token]
+                    
+                    # Merge all instances of this pair (from right to left to avoid index shifting)
+                    positions = pairs_in_segment[best_pair]
+                    for pos in reversed(positions):
+                        if pos < len(segment) - 1 and segment[pos] == best_pair[0] and segment[pos + 1] == best_pair[1]:
+                            segment[pos:pos + 2] = [new_token_id]
+                
+                indeces.append(segment)
+            
+            if specials and i < len(splitted) - 1:
+                indeces.append([specials[i]])
+            
+        return list(chain.from_iterable(indeces))
+    '''
