@@ -172,6 +172,18 @@ class Tokenizer:
         for id in ids:
             byte_string += self.vocab[id]
         return str(byte_string, "utf-8", errors="replace")
+    
+    def to_numpy(self, output: str, text_file: str):
+        """Tokenizes a text file into a one-dimensional numpy vector for training"""
+        ids = []
+        with open(file=text_file, encoding="utf-8") as f:
+            for _id in self.encode_iterable(f):
+                ids.append(_id)
+        ids = np.array(ids, dtype="uint16")
+        np.save(
+            output,
+            arr=ids,
+        )  # , mmap_mode="w")
 
     @staticmethod
     def throughput(filename: str, tokenizer) -> None:
@@ -202,17 +214,7 @@ class Tokenizer:
         return compression_ratio
 
 
-def to_numpy(self, output: str, text_file: str):
-    """Tokenizes a text file into a one-dimensional numpy vector for training"""
-    ids = []
-    with open(file=text_file, encoding="utf-8") as f:
-        for _id in self.encode_iterable(f):
-            ids.append(_id)
-    ids = np.array(ids, dtype="uint16")
-    np.save(
-        output,
-        arr=ids,
-    )  # , mmap_mode="w")
+
 
 
 if __name__ == "__main__":
@@ -228,9 +230,9 @@ if __name__ == "__main__":
     dec = tokenizer.decode(enc)
     print(dec)
 
-    ##
-    # file_to_numpy(output=r"cs336_basics/test_array3", text_file=r"data/sample_tiny.txt", tokenizer=tokenizer)
-
+    #tokenizer.throughput(filename="data/sample_tiny.txt", tokenizer=tokenizer)
+    tokenizer.to_numpy(output=r"cs336_basics/tiny_valid", text_file=r"data/TinyStories-valid.txt")
+    import sys;sys.exit()
     # Test throughput
     import cProfile
     import pstats
