@@ -79,7 +79,7 @@ a) Compression ratio on TinyStories/OpenWebText is: 4.043/4.510.
 
 b) Compression on OpenWebText with Tinystories tokenizer reduces the compression from 4.043 to 3.375. The vocabulary of the tokenizer is not adapted to the source material.
 
-c) Throughput in MB/s = . Estimated time spent = 825 * 1024 **4 (bytes) / Throughput  (bytes/s) =  (s) or 
+c) Throughput in MB/s = 2.66. Estimated time spent = 825 * 1024 (MB) / 2.66  (MB/s) =  317594(s) or 88 hours ~= 4 days.
 
 d) uint16 can store positive values up to 65535, which fits well with the vocabulary sizes we've been targetting. If we wanted to go up to say, 100 000 merges we would have to select a different data type.
 
@@ -130,6 +130,31 @@ Loss with lr 1e3 = 2.06e+19
 A learning rate of 1e1 is already quite agressive and gives rapid convergence towards 0. If we increase lr by a factor of 10 to 1e2 loss will decrease faster and if we increase lr by a factor of 100 the loss diverges.
 
 **Resource accounting AdamW**
+a) memory = (num_activations + total_parameters + num_gradients + optimizer_states) * element_size 
+Where:
+    num_gradients = total_parameters
+    optimizer_states = total_parameters * 2  # momentum + variance
+
+    # Activations
+    embedding_activations = sequence_length * d_model
+    # ffn
+
+    linear_activations = (d_model + d_ff) * sequence_length
+    # mha
+
+    KQV_activations = sequence_length * d_model * 3
+    attention_matrix = sequence_length * sequence_length
+    attention_output = sequence_length * d_model
+    attention_activations = attention_output + attention_matrix + KQV_activations
+    # total activations
+    num_activations = (embedding_activations + num_layers * (linear_activations + attention_activations)) * batch_size
+
+b) Memory in GB = 10,46 * batch_size + 23,2 
+
+c)
+
+d) Total flops A100, 400 steps, 1024 batch_size= 4309039353.69 TFLOPs
+Total time = 5115.19 days. This is 0.4T tokens. It is not far of from SOTA training runs of 15T tokens like Kimi K2. Even with a smaller model this takes a lot of time using full precision.
 
 
 

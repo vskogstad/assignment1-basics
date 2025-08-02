@@ -229,16 +229,16 @@ if __name__ == "__main__":
     print(enc)
     dec = tokenizer.decode(enc)
     print(dec)
-
+    #tokenizer.throughput(filename="data/owt_valid.txt", tokenizer=tokenizer)
     #tokenizer.throughput(filename="data/sample_tiny.txt", tokenizer=tokenizer)
-    tokenizer.to_numpy(output=r"cs336_basics/tiny_valid", text_file=r"data/TinyStories-valid.txt")
-    import sys;sys.exit()
+    #tokenizer.to_numpy(output=r"cs336_basics/owt_train", text_file=r"data/owt_train.txt")
+    #import sys;sys.exit()
     # Test throughput
     import cProfile
     import pstats
 
     with cProfile.Profile() as profile:
-        tokenizer.throughput(filename="data/sample_tiny.txt", tokenizer=tokenizer)
+        tokenizer.throughput(filename="data/owt_valid.txt", tokenizer=tokenizer)
         # import sys; sys.exit()
         # tokenizer.throughput(filename="data/sample_tiny.txt", tokenizer=tokenizer)
 
