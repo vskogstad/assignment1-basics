@@ -18,7 +18,7 @@ def resource_accounting(config):
     d_ff = config.d_ff
 
     sequence_length = context_length  # not neccessarily the case.
-    batch_size = 8
+    batch_size = 1024
 
     # Parameters
     positional_params = context_length * d_model
@@ -27,7 +27,7 @@ def resource_accounting(config):
     mha_params = num_layers * (4 * num_heads * d_model * d_model / num_heads)  # 4 = K,Q,V,O
     ln_params = num_layers * (2 * d_model * 2) + d_model * 2  #
     total_parameters = positional_params + embedding_params + ffn_params + mha_params + ln_params
-    print(f"{total_parameters / (1000 * 1000)=}")
+    print(f"Total parameters = {total_parameters / (1000 * 1000 * 1000):.2f} B")
 
     # FLOPS (skipped rmsnorm)
     pos_flops = 1 * sequence_length * d_model
@@ -40,8 +40,15 @@ def resource_accounting(config):
     )
     lmhead_flops = 2 * (sequence_length * vocab_size * d_model)
     total_flops = pos_flops + ffn_flops + mha_flops + lmhead_flops
-    flops_per_part = [pos_flops/total_flops, ffn_flops/total_flops, mha_flops/total_flops, lmhead_flops/total_flops]
-    print(f"{total_flops/1e12=:.2f} | {flops_per_part=}")
+    flops_per_part = {"Pos flops": pos_flops/total_flops, 
+                      "FFN flops": ffn_flops/total_flops, 
+                      "Attn flops": mha_flops/total_flops, 
+                      "Lmhead flops": lmhead_flops/total_flops}
+    print(f"Forward flops = {total_flops/1e12:.2f} TFLOPs")
+    flops_train = 400_000 * 1024 * 3 * total_flops/1e12
+    print(f"Total flops A100, 400k steps, 1024 batch_size= {flops_train:.2f} TFLOPs")
+    print(f"Total time = {flops_train / (19.5 * 0.5 * 3600 * 24):.2f} days")
+    [print(f"{k} = {v*100:.2f}%")for k,v in flops_per_part.items()]
 
     # MEMORY
     num_gradients = total_parameters
@@ -63,16 +70,16 @@ def resource_accounting(config):
 
     # Total memory
     element_size = 4  # single precision float is 4 bytes 32 / 8
-    memory = (num_activations + total_parameters + num_gradients + optimizer_states) * element_size
-    print(f"{memory/1024**3=} GB")
+    memory = (num_activations + total_parameters + num_gradients + optimizer_states) * element_size / 1024**3
+    print(f"{memory = :.2f} GB")
     # loading model only
-    loading_memory = total_parameters * element_size
-    print(f"{loading_memory/1024**3=:.2f} GB")
+    loading_memory = total_parameters * element_size / 1024**3
+    print(f"{loading_memory = :.2f} GB")
 
     rough_forward_flops_estimate = (
         2 * sequence_length * total_parameters
     )  # 2 * tokens * num parameters (1 token for one forward pass)
-    print(f"{rough_forward_flops_estimate/1e12=} TFLOPs")
+    print(f"{rough_forward_flops_estimate/1e12 = :.2f} TFLOPs")
 
     return total_parameters, flops_per_part
 
@@ -85,4 +92,4 @@ if __name__ == "__main__":
 
     # increased context length
     gpt2xlxc_cfg = ResourceConfig(vocab_size=50257, context_length=16384, num_layers=48, d_model=1600, num_heads=25, d_ff=6400)
-    resource_accounting(gpt2xlxc_cfg)
+    resource_accounting(gpt2xl_cfg)
