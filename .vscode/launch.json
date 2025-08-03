@@ -1,0 +1,12 @@
+{
+    "configurations": [
+        {
+            "name": "Python Debugger: Python File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "args": ["--config", "cs336_basics/configs/base_cpu.yaml"],
+            "purpose": ["debug-in-terminal"]
+        }
+    ]
+}
