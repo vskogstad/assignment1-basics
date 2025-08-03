@@ -44,24 +44,28 @@ def train(cfg: Config):
     """
     # TODO: No weight decay for rmsn-parameters, only matrixes
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using {device}")
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    cfg.dtype = torch.bfloat16 if cfg.dtype == "bfloat16" else torch.float32
+    print(type(cfg.dtype))
+    # torch.set_default_dtype(dtype)
+    print(f"Using {device} and {cfg.dtype}")
 
-    model = get_model(cfg, device) #.to(device=device)
+    model = get_model(cfg, device)  # .to(device=device)
 
-    assert cfg.optimizer == "adamw"  # Not setup to use other optimizers yet.
     assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
-    optimizer = AdamW(
-        params=model.parameters(), lr=cfg.max_learning_rate, betas=cfg.betas, weight_decay=cfg.weight_decay, eps=cfg.eps
-    )
+
+    # no_weigth_decay = [a for a in model.parameters()]
+    # import sys; sys.exit()
+    optimizer = get_optimizer(cfg=cfg, model=model)
+    #
 
     # Data loading
     train_data = np.load(cfg.train_dataset_path, mmap_mode="r")
     val_data = np.load(cfg.val_dataset_path, mmap_mode="r")
     tokenizer = Tokenizer.from_files(
-                    vocab_filepath = cfg.tokenizer_vocab_path,
-                    merges_filepath = cfg.tokenizer_merges_path,
-                )
+        vocab_filepath=cfg.tokenizer_vocab_path,
+        merges_filepath=cfg.tokenizer_merges_path,
+    )
 
     # Initialize logging
     if cfg.wandb_project:
@@ -92,7 +96,7 @@ def train(cfg: Config):
         loss.backward()
 
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
-        
+
         if cfg.scheduler == "cosine":
             optimizer.lr = get_lr_cosine(
                 step=step,
@@ -101,7 +105,7 @@ def train(cfg: Config):
                 warmup_steps=cfg.warmup_steps,
                 cosine_cycle_steps=cfg.cosine_cycle_steps,
             )
-        
+
         optimizer.step()
 
         # Logging
@@ -134,7 +138,7 @@ def train(cfg: Config):
                 val_loss = cross_entropy(pred=y_pred, targets=y_val)
                 # wandb.log({"Validation loss": val_loss})
                 # sample from the model
-                
+
                 print(f"Sampling from the model at step {step} with validation loss {val_loss}\n\n")
                 model.sample(tokenizer=tokenizer, prompt="It was a nice day")
             model.train()
@@ -150,6 +154,33 @@ def train(cfg: Config):
 
     if cfg.wandb_project:
         run.finish()
+
+
+def get_optimizer(cfg: Config, model):
+    """Returns an initialized optimizer with parameters from config"""
+    # Currently only supports AdamW, but setup of parameters to also could initialize Muon optimizer later
+    assert cfg.optimizer == "adamw"
+
+
+    hidden_matrix_params = [
+        param for name, param in model.layers.named_parameters() if param.ndim >= 2 and "embed" not in name
+    ]
+    embed_params = [param for name, param in model.named_parameters() if "embed" in name]
+    scalar_params = [param for param in model.parameters() if param.ndim < 2]
+    head_params = [model.lm_head.W]
+
+    optimizer = AdamW(
+        [
+            {"params": hidden_matrix_params, "weight_decay": cfg.weight_decay},
+            {"params": embed_params, "weight_decay": 0},
+            {"params": scalar_params, "weight_decay": 0},
+            {"params": head_params, "weight_decay": cfg.weight_decay},
+        ],
+        lr=cfg.max_learning_rate,
+        betas=cfg.betas,
+        eps=cfg.eps,
+    )
+    return optimizer
 
 
 def get_model(cfg: Config, device):
@@ -212,7 +243,7 @@ def get_batch(dataset: np.array, batch_size: int, context_length: int, device: s
     # Create index arrays for vectorized sampling
     indices = starts[:, None] + np.arange(context_length + 1)
 
-    batch = torch.from_numpy(dataset[indices]).to(device)
+    batch = torch.from_numpy(dataset[indices]).to(device=device, dtype=torch.int32) #.dtype(torch.int16)
 
     x = batch[:, :-1]
     y = batch[:, 1:]

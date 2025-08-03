@@ -161,6 +161,7 @@ class Transformer(nn.Module):
         )
         self.rmsn_f = RMSNorm(d_model=d_model, eps=1e-5, device=device, dtype=dtype)
         self.lm_head = Linear(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype)
+        self.device = device
 
     def forward(self, x: torch.Tensor):
         x = self.embedding(x)

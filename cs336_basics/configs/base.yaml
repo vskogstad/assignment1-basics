@@ -15,7 +15,7 @@ tokenizer_vocab_path: "data/tokenizer_data/vocab_tiny.pkl"
 tokenizer_merges_path: "data/tokenizer_data/merges_tiny.pkl"
 
 # Training configuration
-dtype: "float32"
+dtype: float32 # bfloat16
 batch_size: 2
 min_learning_rate: 0.001
 max_learning_rate: 0.01
