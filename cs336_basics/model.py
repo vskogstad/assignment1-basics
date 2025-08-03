@@ -33,7 +33,7 @@ class Embedding(nn.Module):
     ):
         super().__init__()
         self.embedding = nn.Parameter(
-            nn.init.trunc_normal_(tensor=torch.zeros(size=(num_embeddings, embeddings_dim)), mean=0, std=1, a=-3, b=3)
+            nn.init.trunc_normal_(tensor=torch.zeros(size=(num_embeddings, embeddings_dim), device=device, dtype=dtype), mean=0, std=1, a=-3, b=3)
         )
 
     def forward(self, token_ids: torch.Tensor):
@@ -47,7 +47,7 @@ class RMSNorm(nn.Module):
     ):
         super().__init__()
         self.eps = eps
-        self.weights = nn.Parameter(torch.ones(d_model, dtype=torch.float32))
+        self.weights = nn.Parameter(torch.ones(d_model, dtype=torch.float32, device=device))
         self.d_model = d_model
 
     def forward(self, x: torch.Tensor):
@@ -76,17 +76,17 @@ class SWIGLU(nn.Module):
         std = math.sqrt(2 / (d_model + d_ff))
         self.w1 = nn.Parameter(
             nn.init.trunc_normal_(
-                tensor=torch.zeros(size=(d_ff, d_model), device=device), mean=0, std=std, a=-3 * std, b=3 * std
+                tensor=torch.zeros(size=(d_ff, d_model), device=device, dtype=dtype), mean=0, std=std, a=-3 * std, b=3 * std
             )
         )
         self.w2 = nn.Parameter(
             nn.init.trunc_normal_(
-                tensor=torch.zeros(size=(d_model, d_ff), device=device), mean=0, std=std, a=-3 * std, b=3 * std
+                tensor=torch.zeros(size=(d_model, d_ff), device=device, dtype=dtype), mean=0, std=std, a=-3 * std, b=3 * std
             )
         )
         self.w3 = nn.Parameter(
             nn.init.trunc_normal_(
-                tensor=torch.zeros(size=(d_ff, d_model), device=device), mean=0, std=std, a=-3 * std, b=3 * std
+                tensor=torch.zeros(size=(d_ff, d_model), device=device, dtype=dtype), mean=0, std=std, a=-3 * std, b=3 * std
             )
         )
         self.silu = SILU()
@@ -116,8 +116,7 @@ class Block(nn.Module):
     ):
         super().__init__()
         self.mha = MultiHeadAttention(
-            d_model=d_model, num_heads=num_heads, max_sequence_length=max_sequence_length, theta=theta
-        )
+            d_model=d_model, num_heads=num_heads, max_sequence_length=max_sequence_length, theta=theta, device=device, dtype=dtype)
         self.rmsn1 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
         self.ffn = SWIGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
         self.rmsn2 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
@@ -145,7 +144,7 @@ class Transformer(nn.Module):
         dtype: torch.dtype | None = None,
     ):
         super().__init__()
-        self.embedding = Embedding(num_embeddings=vocab_size, embeddings_dim=d_model)
+        self.embedding = Embedding(num_embeddings=vocab_size, embeddings_dim=d_model, device=device, dtype=dtype)
         self.layers = nn.Sequential(
             *[
                 Block(
@@ -178,7 +177,7 @@ class Transformer(nn.Module):
             response_length = len(sequence)
             end_of_text_token = tokenizer.encode("<|endoftext|>")[0]
             print()
-            sequence = torch.tensor(sequence, dtype=torch.long).unsqueeze(0)
+            sequence = torch.tensor(sequence, dtype=torch.long, device=self.device).unsqueeze(0)
             
             # turn sequence into torch tensor
             while response_length < max_tokens:
@@ -312,7 +311,7 @@ class MultiHeadAttention(nn.Module):
             max_sequence_length = (
                 d_model  # set it to some slightly large number to pass tests, should be using max_sequence length.
             )
-        self.tril = torch.tril(torch.ones((max_sequence_length, max_sequence_length)))
+        self.tril = torch.tril(torch.ones((max_sequence_length, max_sequence_length), device=device, dtype=dtype))
         if theta is not None:
             self.rope = RoPE(theta=theta, d_k=self.d_k, max_sequence_length=max_sequence_length, device=device)
         else:

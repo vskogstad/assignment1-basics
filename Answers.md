@@ -153,8 +153,10 @@ b) Memory in GB = 10,46 * batch_size + 23,2
 
 c)
 
-d) Total flops A100, 400 steps, 1024 batch_size= 4309039353.69 TFLOPs
-Total time = 5115.19 days. This is 0.4T tokens. It is not far of from SOTA training runs of 15T tokens like Kimi K2. Even with a smaller model this takes a lot of time using full precision.
+d) This seems like a trick question, as you typically would not use the fp32 spec (19.5 TFLOPS) but TF32 spec (156 TFLOPS) to calculate the time needed (most operations are matmuls). Using 19.4 TFLOPS I get: 
+Total flops A100, 400 steps, w. 1024 batch_size = 4309039353.69 TFLOPs
+Total time = 5115.19 days. 
+This shows the advantage of matmul optimizations done in the more recent gpus such as A100, as it decreases the required training time by 1/8. Still a long time, but this is 0.4T tokens. It is not that far of from SOTA training runs of 15T tokens like Kimi K2. Even with a smaller model this takes a lot of time using no mixed training and a single GPU.
 
 
 
