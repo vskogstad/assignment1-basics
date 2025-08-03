@@ -9,8 +9,10 @@ context_length: 256
 theta: 10000
 
 # data loading
-train_dataset_path: "data/test_array2.npy"
-val_dataset_path: "data/test_array.npy"
+train_dataset_path: "data/tiny_train.npy"
+val_dataset_path: "data/tint_valid.npy"
+tokenizer_vocab_path: "data/tokenizer_data/vocab_tiny.pkl"
+tokenizer_merges_path: "data/tokenizer_data/merges_tiny.pkl"
 
 # Training configuration
 dtype: "float32"

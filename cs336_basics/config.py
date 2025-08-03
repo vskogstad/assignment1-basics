@@ -19,6 +19,8 @@ class Config:
     # data loading
     train_dataset_path: str
     val_dataset_path: str
+    tokenizer_vocab_path: str
+    tokenizer_merges_path: str
 
     # Training
     dtype: str

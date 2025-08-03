@@ -45,7 +45,9 @@ def train(cfg: Config):
     # TODO: No weight decay for rmsn-parameters, only matrixes
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = get_model(cfg, device)
+    print(f"Using {device}")
+
+    model = get_model(cfg, device) #.to(device=device)
 
     assert cfg.optimizer == "adamw"  # Not setup to use other optimizers yet.
     assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
@@ -53,14 +55,19 @@ def train(cfg: Config):
         params=model.parameters(), lr=cfg.max_learning_rate, betas=cfg.betas, weight_decay=cfg.weight_decay, eps=cfg.eps
     )
 
+    # Data loading
     train_data = np.load(cfg.train_dataset_path, mmap_mode="r")
     val_data = np.load(cfg.val_dataset_path, mmap_mode="r")
+    tokenizer = Tokenizer.from_files(
+                    vocab_filepath = cfg.tokenizer_vocab_path,
+                    merges_filepath = cfg.tokenizer_merges_path,
+                )
 
     # Initialize logging
     if cfg.wandb_project:
         wandb.login()
         run = wandb.init(project=cfg.wandb_project, config=asdict(cfg))
-    step = 0
+    current_step = 0
     chunk_steps = 0
     chunk_loss = 0
     t_0 = time.time_ns()
@@ -75,7 +82,7 @@ def train(cfg: Config):
         )  # increment by one, this step has already been done
 
     # Training loop
-    for step in range(step, cfg.total_steps):
+    for step in range(current_step, cfg.total_steps):
         x, y = get_batch(
             dataset=train_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device
         )
@@ -85,14 +92,17 @@ def train(cfg: Config):
         loss.backward()
 
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
-        optimizer.lr = get_lr_cosine(
-            step=step,
-            max_learning_rate=cfg.max_learning_rate,
-            min_learning_rate=cfg.min_learning_rate,
-            warmup_steps=cfg.warmup_steps,
-            cosine_cycle_steps=cfg.cosine_cycle_steps,
-        )
-        optimizer.step()  # Pass in learning rate?
+        
+        if cfg.scheduler == "cosine":
+            optimizer.lr = get_lr_cosine(
+                step=step,
+                max_learning_rate=cfg.max_learning_rate,
+                min_learning_rate=cfg.min_learning_rate,
+                warmup_steps=cfg.warmup_steps,
+                cosine_cycle_steps=cfg.cosine_cycle_steps,
+            )
+        
+        optimizer.step()
 
         # Logging
         chunk_loss += loss.item()
@@ -100,24 +110,18 @@ def train(cfg: Config):
         if step % cfg.log_interval == 0:
             loss_accumulated = chunk_loss / chunk_steps
 
-            
             t_1 = time.time_ns()
             chunk_time = t_1 - t_0
             t_0 = time.time_ns()
             token_per_s = 1e6 * chunk_steps * cfg.batch_size * cfg.context_length / (chunk_time)
-            print(f"step = {step} | Loss = {loss_accumulated:.3f} | {chunk_time = :.3f} | tok/ms = {token_per_s:.3f} | lr = {optimizer.lr}")
+            print(
+                f"step = {step} | Loss = {loss_accumulated:.3f} | ns {chunk_time = :.2f} | tok/ms = {token_per_s:.3f} | lr = {optimizer.lr}"
+            )
 
             chunk_loss = 0
             chunk_steps = 0
             if cfg.wandb_project:
-                run.log(
-                    {
-                        "Step": step,
-                        "Loss": loss_accumulated,
-                        "tok/ms": token_per_s,
-                        "lr": optimizer.lr
-                    }
-                )
+                run.log({"Step": step, "Loss": loss_accumulated, "tok/ms": token_per_s, "lr": optimizer.lr})
 
         # validation
         if step % cfg.eval_interval == 0:
@@ -130,10 +134,7 @@ def train(cfg: Config):
                 val_loss = cross_entropy(pred=y_pred, targets=y_val)
                 # wandb.log({"Validation loss": val_loss})
                 # sample from the model
-                tokenizer = Tokenizer.from_files(
-                    vocab_filepath="cs336_basics/tokenizer_data/vocab-tiny.pkl",
-                    merges_filepath="cs336_basics/tokenizer_data/merges-tiny.pkl",
-                )
+                
                 print(f"Sampling from the model at step {step} with validation loss {val_loss}\n\n")
                 model.sample(tokenizer=tokenizer, prompt="It was a nice day")
             model.train()
@@ -148,7 +149,8 @@ def train(cfg: Config):
             )
 
     if cfg.wandb_project:
-         run.finish()
+        run.finish()
+
 
 def get_model(cfg: Config, device):
     if cfg.model_name == "transformer":
@@ -339,6 +341,7 @@ def clip_gradient(parameters, max_l2_norm: float):
         return
 
     # Clip gradients
+    print(f"clipping from {l2_norm}")
     for param in parameters:
         if param.grad != None:
             param.grad *= max_l2_norm / (l2_norm + eps)
