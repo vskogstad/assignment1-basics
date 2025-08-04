@@ -1,0 +1,46 @@
+{
+  "os": "Linux-6.8.0-1013-nvidia-64k-aarch64-with-glibc2.35",
+  "python": "CPython 3.13.5",
+  "startedAt": "2025-08-04T20:00:54.764334Z",
+  "args": [
+    "--config",
+    "cs336_basics/configs/experiments/LR_exploration.yaml"
+  ],
+  "program": "/home/ubuntu/assignment1-basics/cs336_basics/train_model.py",
+  "codePath": "cs336_basics/train_model.py",
+  "git": {
+    "remote": "https://github.com/vskogstad/assignment1-basics.git",
+    "commit": "51f9af9e6cd82578ba354ad2be08ca442851f37b"
+  },
+  "email": "skogstadv@gmail.com",
+  "root": "/home/ubuntu/assignment1-basics",
+  "host": "192-222-57-2",
+  "executable": "/home/ubuntu/assignment1-basics/.venv/bin/python3",
+  "codePathLocal": "cs336_basics/train_model.py",
+  "cpu_count": 64,
+  "cpu_count_logical": 64,
+  "gpu": "NVIDIA GH200 480GB",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "4261618229248",
+      "used": "27597389824"
+    }
+  },
+  "memory": {
+    "total": "564443283456"
+  },
+  "cpu": {
+    "count": 64,
+    "countLogical": 64
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GH200 480GB",
+      "memoryTotal": "102625181696",
+      "cudaCores": 16896,
+      "architecture": "Hopper"
+    }
+  ],
+  "cudaVersion": "12.8"
+}

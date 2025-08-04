@@ -1,0 +1,92 @@
+_wandb:
+    value:
+        cli_version: 0.19.9
+        m: []
+        python_version: 3.13.5
+        t:
+            "1":
+                - 1
+                - 55
+            "2":
+                - 1
+                - 55
+            "3":
+                - 16
+                - 23
+                - 55
+            "4": 3.13.5
+            "5": 0.19.9
+            "8":
+                - 5
+            "12": 0.19.9
+            "13": linux-aarch64
+batch_size:
+    value: 128
+betas:
+    value:
+        - 0.9
+        - 0.999
+context_length:
+    value: 256
+cosine_cycle_steps:
+    value: 0
+d_ff:
+    value: 1344
+d_model:
+    value: 512
+dtype:
+    value: torch.float32
+eps:
+    value: 1e-08
+eval_interval:
+    value: 500
+experiment_name:
+    value: LR_search
+from_checkpoint:
+    value: null
+grad_clip_norm:
+    value: 1
+log_interval:
+    value: 10
+max_learning_rate:
+    value: 0.05
+min_learning_rate:
+    value: 0.0001
+model_name:
+    value: transformer
+muon_momentum:
+    value: 0.9
+num_heads:
+    value: 16
+num_layers:
+    value: 4
+optimizer:
+    value: adamw
+output_dir:
+    value: cs336_basics/configs/experiments
+save_interval:
+    value: 1000
+scheduler:
+    value: cosine
+seed:
+    value: 42
+theta:
+    value: 10000
+tokenizer_merges_path:
+    value: data/tokenizer_data/merges_tiny.pkl
+tokenizer_vocab_path:
+    value: data/tokenizer_data/vocab_tiny.pkl
+total_steps:
+    value: 1001
+train_dataset_path:
+    value: data/training_data/tiny_train.npy
+val_dataset_path:
+    value: data/training_data/tiny_valid.npy
+vocab_size:
+    value: 10000
+wandb_project:
+    value: lm_training
+warmup_steps:
+    value: 1001
+weight_decay:
+    value: 0.01

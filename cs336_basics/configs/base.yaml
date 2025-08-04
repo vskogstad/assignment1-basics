@@ -9,8 +9,8 @@ context_length: 256
 theta: 10000
 
 # data loading
-train_dataset_path: "data/tiny_train.npy"
-val_dataset_path: "data/tint_valid.npy"
+train_dataset_path: "data/training_data/tiny_train.npy"
+val_dataset_path: "data/training_data/tiny_valid.npy"
 tokenizer_vocab_path: "data/tokenizer_data/vocab_tiny.pkl"
 tokenizer_merges_path: "data/tokenizer_data/merges_tiny.pkl"
 

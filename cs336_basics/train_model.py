@@ -32,10 +32,11 @@ def train(cfg: Config):
     )
     """
     # 
-
+    print(torch.cuda.is_available())
+    torch.zeros(1).cuda()
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     cfg.dtype = torch.bfloat16 if cfg.dtype == "bfloat16" else torch.float32
-    print(type(cfg.dtype))
+    
     # torch.set_default_dtype(dtype)
     print(f"Using {device} and {cfg.dtype}")
 
