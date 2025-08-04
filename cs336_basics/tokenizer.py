@@ -220,8 +220,8 @@ class Tokenizer:
 if __name__ == "__main__":
     special_tokens = ["<|imstart|>", "<|endoftext|>"]
     tokenizer = Tokenizer.from_files(
-        vocab_filepath="cs336_basics/tokenizer_data/vocab_owt_train.pkl",
-        merges_filepath="cs336_basics/tokenizer_data/merges_owt_train.pkl",
+        vocab_filepath="data/tokenizer_data/vocab_TinyStories-train.pkl",
+        merges_filepath="data/tokenizer_data/merges_TinyStories-train.pkl",
         special_tokens=special_tokens,
     )
     print(type(tokenizer.vocab), type(tokenizer.merges))
@@ -231,14 +231,14 @@ if __name__ == "__main__":
     print(dec)
     #tokenizer.throughput(filename="data/owt_valid.txt", tokenizer=tokenizer)
     #tokenizer.throughput(filename="data/sample_tiny.txt", tokenizer=tokenizer)
-    #tokenizer.to_numpy(output=r"cs336_basics/owt_train", text_file=r"data/owt_train.txt")
-    #import sys;sys.exit()
+    tokenizer.to_numpy(output=r"data/training_data/Tinystories_valid", text_file=r"data/TinyStories-valid.txt")
+    import sys;sys.exit()
     # Test throughput
     import cProfile
     import pstats
 
     with cProfile.Profile() as profile:
-        tokenizer.throughput(filename="data/owt_valid.txt", tokenizer=tokenizer)
+        tokenizer.throughput(filename="data/TinyStories-train.txt", tokenizer=tokenizer)
         # import sys; sys.exit()
         # tokenizer.throughput(filename="data/sample_tiny.txt", tokenizer=tokenizer)
 

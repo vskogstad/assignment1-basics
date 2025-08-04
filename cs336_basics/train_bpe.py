@@ -1,7 +1,7 @@
-import os
 import pickle
 from collections import Counter
 from typing import BinaryIO
+import pathlib
 
 from cs336_basics.pretokenization import pretokenize_file
 
@@ -236,13 +236,13 @@ def update_dictionaries(
 
 def save_data(vocab, merges, output_name: str):
     """Saves vocab and merges as .pkl files"""
-
-    base_path = "cs336_basics/tokenizer_data/"
-    vocab_name = os.path.join(base_path, f"vocab_{output_name}.pkl")
-    merges_name = os.path.join(base_path, f"merges_{output_name}.pkl")
-    with open(vocab_name, "wb") as vocab_file:
+    tokenizer_path = (pathlib.Path(__file__).resolve().parent.parent) / "data" / "tokenizer_data"
+    #tokenizer_path.parent.mkdir(parents=True, exist_ok=True)
+    vocab_path = tokenizer_path / f"vocab_{output_name}.pkl"
+    merges_path = tokenizer_path / f"merges_{output_name}.pkl"
+    with open(vocab_path, "wb") as vocab_file:
         pickle.dump(vocab, vocab_file)
-    with open(merges_name, "wb") as merges_file:
+    with open(merges_path, "wb") as merges_file:
         pickle.dump(merges, merges_file)
 
 
@@ -251,7 +251,7 @@ if __name__ == "__main__":
     import pstats
 
     with cProfile.Profile() as profile:
-        dataset_path, vocab_size = "data/owt_valid.txt", 32000
+        dataset_path, vocab_size = "data/TinyStories-train.txt", 10000
         # dataset_path, vocab_size = "data/TinyStoriesV2-GPT4-train.txt", 50000
         dataset_name = dataset_path.split("/")[-1].split(".")[0]
         vocab, merges = train_bpe(

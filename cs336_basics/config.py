@@ -34,6 +34,7 @@ class Config:
     cosine_cycle_steps: int | None
     betas: tuple
     eps: float
+    muon_momentum: float
     grad_clip_norm: float
     optimizer: str
     scheduler: str
@@ -81,11 +82,13 @@ def get_parser():
     parser.add_argument("--total_steps", type=int)
     parser.add_argument("--model_name", type=str)
     parser.add_argument("--warmup_steps", type=int)
-    parser.add_argument("--max_learning_rate", type=int)
+    parser.add_argument("--max_learning_rate", type=float)
     parser.add_argument("--weight_decay", type=int)
+    parser.add_argument("--optimizer", type=str)
     parser.add_argument("--eps", type=int)
     parser.add_argument("--betas", type=tuple)
     parser.add_argument("--batch_size", type=int)
     parser.add_argument("--wandb_project", type=str)
+    
 
     return parser

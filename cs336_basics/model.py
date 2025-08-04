@@ -273,19 +273,7 @@ class RoPE(nn.Module):
 
         # print(f"{x_rope.shape=}")
         return x_rope
-
-
-"""
-class Head(nn.Module):
-
-    def __init__(self, head_size, dim):
-        super().__init__()
-
-
-    def forward(x: torch.tensor):
-        return scaled_dot_product_attention(self.Q, self.K, self.V, mask="tril")
-"""
-
+    
 
 class MultiHeadAttention(nn.Module):
     def __init__(

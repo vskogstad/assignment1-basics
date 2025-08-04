@@ -1,11 +1,14 @@
 class ResourceConfig:
-    def __init__(self, vocab_size, context_length, num_layers, d_model, num_heads, d_ff, glu=False):
+    def __init__(self, vocab_size, context_length, num_layers, d_model, num_heads, d_ff, batch_size=1024, model_name = "transformer_silu", theta= None):
         self.d_model = d_model
         self.vocab_size = vocab_size
         self.num_layers = num_layers
         self.context_length = context_length
         self.num_heads = num_heads
         self.d_ff = d_ff
+        self.model_name = model_name
+        self.theta = theta
+        self.batch_size = batch_size
 
 
 def resource_accounting(config):
@@ -16,18 +19,22 @@ def resource_accounting(config):
     context_length = config.context_length
     num_heads = config.num_heads
     d_ff = config.d_ff
-
+    batch_size = config.batch_size
+    model_arc = config.model_name
+    theta = config.theta
     sequence_length = context_length  # not neccessarily the case.
-    batch_size = 1024
+    weight_sharing = False if config.theta else True
+    num_weight_matrices = 2 if model_arc == "tranformer_silu" else 3 # We run GLU for all other variants
+
 
     # Parameters
-    positional_params = context_length * d_model
-    embedding_params = vocab_size * d_model  # covers both embedding and final lm_head due to weight sharing
-    ffn_params = num_layers * (2 * d_ff * d_model)
+    positional_params = context_length * d_model if not theta else 0 # If RoPE, no positional params
+    embedding_params = vocab_size * d_model * (2 - weight_sharing)  # covers both embedding and final lm_head. Only one matrix due to weight sharing for gpt-2
+    ffn_params = num_layers * (num_weight_matrices * d_ff * d_model)  # 3 matrices with GLU, 2 with just LU
     mha_params = num_layers * (4 * num_heads * d_model * d_model / num_heads)  # 4 = K,Q,V,O
     ln_params = num_layers * (2 * d_model * 2) + d_model * 2  #
     total_parameters = positional_params + embedding_params + ffn_params + mha_params + ln_params
-    print(f"Total parameters = {total_parameters / (1000 * 1000 * 1000):.2f} B")
+    print(f"Total parameters = {total_parameters / (1000 * 1000 ):.2f} M")
 
     # FLOPS (skipped rmsnorm)
     pos_flops = 1 * sequence_length * d_model
@@ -46,8 +53,8 @@ def resource_accounting(config):
                       "Lmhead flops": lmhead_flops/total_flops}
     print(f"Forward flops = {total_flops/1e12:.2f} TFLOPs")
     flops_train = 400_000 * 1024 * 3 * total_flops/1e12
-    print(f"Total flops A100, 400k steps, 1024 batch_size= {flops_train:.2f} TFLOPs")
-    print(f"Total time = {flops_train / (19.5 * 0.5 * 3600 * 24):.2f} days")
+    #print(f"Total flops A100, 400k steps, 1024 batch_size= {flops_train:.2f} TFLOPs")
+    #print(f"Total time = {flops_train / (19.5 * 0.5 * 3600 * 24):.2f} days")
     [print(f"{k} = {v*100:.2f}%")for k,v in flops_per_part.items()]
 
     # MEMORY
