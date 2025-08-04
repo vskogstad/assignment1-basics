@@ -86,7 +86,7 @@ def resource_accounting(config):
     rough_forward_flops_estimate = (
         2 * sequence_length * total_parameters
     )  # 2 * tokens * num parameters (1 token for one forward pass)
-    print(f"{rough_forward_flops_estimate/1e12 = :.2f} TFLOPs")
+    #print(f"{rough_forward_flops_estimate/1e12 = :.2f} TFLOPs")
 
     return total_parameters, flops_per_part
 
