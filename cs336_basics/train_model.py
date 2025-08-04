@@ -16,23 +16,9 @@ import wandb
 from cs336_basics.config import Config, get_parser
 from cs336_basics.model import Transformer
 from cs336_basics.tokenizer import Tokenizer
+from cs336_basics.utils import resource_accounting
 
-# TODO: training loop with config
-# TODO: look for efficiency improvements. Mostly just passing tests at the moment
 # TODO: Muon optimizer
-
-'''
-class Config:
-    
-    def __init__(self, path: str | None=None):
-        """reads config from file or initializes with the variables shown below"""
-        if path:
-            raise NotImplementedError()
-        else:
-            optimizer = 
-
-
-'''
 
 
 def train(cfg: Config):
@@ -51,7 +37,8 @@ def train(cfg: Config):
     print(f"Using {device} and {cfg.dtype}")
 
     model = get_model(cfg, device)  # .to(device=device)
-
+    _ = resource_accounting(cfg) # Print info about the current run to the log
+    
     assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
 
     # no_weigth_decay = [a for a in model.parameters()]
@@ -97,7 +84,7 @@ def train(cfg: Config):
 
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
 
-        if cfg.scheduler == "cosine":
+        if cfg.scheduler == "acosine": # temporary disabled to test varying lr across groups
             optimizer.lr = get_lr_cosine(
                 step=step,
                 max_learning_rate=cfg.max_learning_rate,
@@ -119,16 +106,16 @@ def train(cfg: Config):
             t_0 = time.time_ns()
             token_per_s = 1e6 * chunk_steps * cfg.batch_size * cfg.context_length / (chunk_time)
             print(
-                f"step = {step} | Loss = {loss_accumulated:.3f} | ns {chunk_time = :.2f} | tok/ms = {token_per_s:.3f} | lr = {optimizer.lr}"
+                f"step = {step} | Loss = {loss_accumulated:.3f} | ns {chunk_time = :.2f} | tok/ms = {token_per_s:.3f}" # | lr = {optimizer.lr}"
             )
 
             chunk_loss = 0
             chunk_steps = 0
             if cfg.wandb_project:
-                run.log({"Step": step, "Loss": loss_accumulated, "tok/ms": token_per_s, "lr": optimizer.lr})
+                run.log({"Step": step, "Loss": loss_accumulated, "tok/ms": token_per_s}) #, "lr": optimizer.lr})
 
         # validation
-        if step % cfg.eval_interval == 0:
+        if step % cfg.eval_interval == 0 and step != 0:
             model.eval()
             with torch.no_grad():
                 x_val, y_val = get_batch(
@@ -144,7 +131,7 @@ def train(cfg: Config):
             model.train()
 
         # checkpointing
-        if step % cfg.save_interval == 0:
+        if step % cfg.save_interval == 0 and step != 0:
             save_checkpoint(
                 model=model,
                 optimizer=optimizer,
@@ -159,8 +146,6 @@ def train(cfg: Config):
 def get_optimizer(cfg: Config, model):
     """Returns an initialized optimizer with parameters from config"""
     # Currently only supports AdamW, but setup of parameters to also could initialize Muon optimizer later
-    assert cfg.optimizer == "adamw"
-
 
     hidden_matrix_params = [
         param for name, param in model.layers.named_parameters() if param.ndim >= 2 and "embed" not in name
@@ -168,18 +153,35 @@ def get_optimizer(cfg: Config, model):
     embed_params = [param for name, param in model.named_parameters() if "embed" in name]
     scalar_params = [param for param in model.parameters() if param.ndim < 2]
     head_params = [model.lm_head.W]
+    if cfg.optimizer == "adamw":
+        optimizer = AdamW(
+            [
+                {"params": hidden_matrix_params, "weight_decay": cfg.weight_decay},
+                {"params": embed_params, "weight_decay": 0},
+                {"params": scalar_params, "weight_decay": 0},
+                {"params": head_params, "weight_decay": cfg.weight_decay},
+            ],
+            lr=cfg.max_learning_rate,
+            betas=cfg.betas,
+            eps=cfg.eps,
+        )
+    elif cfg.optimizer == "muon":
+        optimizer = MuonWithAdamW(
+            [
+                {"params": hidden_matrix_params, "weight_decay": cfg.weight_decay, "lr":0.05, "use_muon": True},
+                {"params": embed_params, "weight_decay": 0, "lr":0.6, "use_muon": False},
+                {"params": scalar_params, "weight_decay": 0, "lr":0.04, "use_muon": False},
+                {"params": head_params, "weight_decay": cfg.weight_decay, "lr":0.22, "use_muon": False},
+            ],
+            #lr=cfg.max_learning_rate,
+            momentum=cfg.muon_momentum,
+            weight_decay=cfg.weight_decay,
+            betas=cfg.betas,
+            eps=cfg.eps,
 
-    optimizer = AdamW(
-        [
-            {"params": hidden_matrix_params, "weight_decay": cfg.weight_decay},
-            {"params": embed_params, "weight_decay": 0},
-            {"params": scalar_params, "weight_decay": 0},
-            {"params": head_params, "weight_decay": cfg.weight_decay},
-        ],
-        lr=cfg.max_learning_rate,
-        betas=cfg.betas,
-        eps=cfg.eps,
-    )
+        )
+    else:
+        raise NotImplementedError(f"No optimizer named {cfg.optimizer} has been implemented.")
     return optimizer
 
 
@@ -243,7 +245,7 @@ def get_batch(dataset: np.array, batch_size: int, context_length: int, device: s
     # Create index arrays for vectorized sampling
     indices = starts[:, None] + np.arange(context_length + 1)
 
-    batch = torch.from_numpy(dataset[indices]).to(device=device, dtype=torch.int32) #.dtype(torch.int16)
+    batch = torch.from_numpy(dataset[indices]).to(device=device, dtype=torch.int32)  # .dtype(torch.int16)
 
     x = batch[:, :-1]
     y = batch[:, 1:]
@@ -340,6 +342,121 @@ class AdamW(torch.optim.Optimizer):
                 state["v"] = v
 
         return loss
+
+
+class Muon(torch.optim.Optimizer):
+    def __init__(self, params, lr=1e-3, momentum=0.95, weight_decay=1e-4, eps=1e-7):
+        if lr < 0:
+            raise ValueError(f"Invalid learning rate: {lr}")
+        defaults = {"lr": lr, "eps": eps, "momentum": momentum, "weight_decay": weight_decay}
+        super().__init__(params, defaults)
+
+    def step(self, closure: Optional[Callable] = None):
+        loss = None if closure is None else closure()
+
+        for group in self.param_groups:
+            if not group["use_muon"]:
+                continue
+            lr = group["lr"]  # Get the learning rate.
+            momentum = group["momentum"]
+            eps = group["eps"]
+            weight_decay = group["weight_decay"]
+
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+
+                state = self.state[p]  # Get state associated with p.
+                # t = state.get("t", 1)  # Get iteration number from the state, or initial value.
+                B_t = state.get("B_t", torch.zeros_like(p.data))
+
+                grad = p.grad.data  # Get the gradient of loss with respect to p.
+                B_t = momentum * B_t + grad
+                O_t = newtonschulz5(B_t, steps=5, eps=eps)
+
+                p.data -= lr * O_t  # Update weight tensor in-place.
+                p.data -= lr * weight_decay * p.data  # Apply weight decay
+                # state["t"] = t + 1  # Increment iteration number.
+                state["momentum"] = B_t
+
+        return loss
+
+class MuonWithAdamW(torch.optim.Optimizer):
+    def __init__(self, params, lr=1e-3, momentum=0.95, betas=(0.9, 0.999), weight_decay=1e-4, eps=1e-8):
+        if lr < 0:
+            raise ValueError(f"Invalid learning rate: {lr}")
+        defaults = {"lr": lr, "eps": eps, "momentum": momentum, "weight_decay": weight_decay, "betas": betas}
+        super().__init__(params, defaults)
+
+    def step(self, closure: Optional[Callable] = None):
+        loss = None if closure is None else closure()
+
+        for group in self.param_groups:
+            lr = group["lr"]  # Get the learning rate.
+            weight_decay = group["weight_decay"]
+            if not group["use_muon"]:
+                beta_1, beta_2 = group["betas"]
+                eps = group["eps"]
+                weight_decay = group["weight_decay"]
+            else:
+                momentum = group["momentum"]
+
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+            
+                if not group["use_muon"]: # Use adamw
+                    state = self.state[p]  # Get state associated with p.
+                    t = state.get("t", 1)  # Get iteration number from the state, or initial value.
+                    m = state.get(
+                        "m", torch.zeros_like(p.data)
+                    )  # Get first vector momentum from the state, or initial value.
+                    v = state.get(
+                        "v", torch.zeros_like(p.data)
+                    )  # Get second vector momentum from the state, or initial value.
+
+                    grad = p.grad.data  # Get the gradient of loss with respect to p.
+                    m = beta_1 * m + (1 - beta_1) * grad  # Update first moment estimate
+                    v = beta_2 * v + (1 - beta_2) * grad**2  # Update second moment estimate
+
+                    lr_t = lr * (math.sqrt(1 - beta_2**t) / (1 - beta_1**t))  # adjust lr
+                    p.data -= lr_t * (m / (torch.sqrt(v) + eps))  # Update weight tensor in-place.
+                    p.data -= lr * weight_decay * p.data  # Apply weight decay
+                    state["t"] = t + 1  # Increment iteration number.
+                    state["m"] = m
+                    state["v"] = v
+
+                else: # Use Muon
+                    state = self.state[p]  # Get state associated with p.
+                    B_t = state.get("B_t", torch.zeros_like(p.data))
+
+                    grad = p.grad.data  # Get the gradient of loss with respect to p.
+                    B_t = momentum * B_t + grad
+                    O_t = newtonschulz5(B_t, steps=5, eps=1e-7)
+
+                    p.data -= lr * O_t  # Update weight tensor in-place.
+                    p.data -= lr * weight_decay * p.data  # Apply weight decay
+                    # state["t"] = t + 1  # Increment iteration number.
+                    state["momentum"] = B_t
+
+        return loss
+
+
+def newtonschulz5(G, steps=5, eps=1e-7):
+    """From https://kellerjordan.github.io/posts/muon/"""
+    assert G.ndim == 2
+    a, b, c = (3.4445, -4.7750, 2.0315)
+    X = G.bfloat16()
+    X /= X.norm() + eps
+    if G.size(0) > G.size(1):
+        X = X.T
+    for _ in range(steps):
+        A = X @ X.T
+        B = b * A + c * A @ A
+        X = a * X + B @ X
+    if G.size(0) > G.size(1):
+        X = X.T
+    return X
 
 
 def get_lr_cosine(
