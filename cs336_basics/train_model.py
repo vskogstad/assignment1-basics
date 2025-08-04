@@ -18,8 +18,11 @@ from cs336_basics.model import Transformer
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.utils import resource_accounting
 
-# TODO: Muon optimizer
-
+# TODO: Muon optimizer verified.
+# Perplexity measurement.
+# Train model on gpu
+# Ablations and hyper-parameter search
+#
 
 def train(cfg: Config):
     """Main training loop
@@ -28,7 +31,7 @@ def train(cfg: Config):
         "--optimizer", type=torch.optim.Optimizer, help="Optimizer to use"
     )
     """
-    # TODO: No weight decay for rmsn-parameters, only matrixes
+    # 
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     cfg.dtype = torch.bfloat16 if cfg.dtype == "bfloat16" else torch.float32
@@ -118,15 +121,16 @@ def train(cfg: Config):
         if step % cfg.eval_interval == 0 and step != 0:
             model.eval()
             with torch.no_grad():
+                print(f"\nCalculating validation loss. Using batch size: {len(val_data)}")
                 x_val, y_val = get_batch(
-                    dataset=val_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device
+                    dataset=val_data, batch_size=len(val_data), context_length=cfg.context_length, device=device
                 )
                 y_pred = model(x_val)
                 val_loss = cross_entropy(pred=y_pred, targets=y_val)
-                # wandb.log({"Validation loss": val_loss})
+                if cfg.wandb_project:
+                    wandb.log({"Validation loss": val_loss})
                 # sample from the model
-
-                print(f"Sampling from the model at step {step} with validation loss {val_loss}\n\n")
+                print(f"Sampling from the model at step {step} with validation loss {val_loss}")
                 model.sample(tokenizer=tokenizer, prompt="It was a nice day")
             model.train()
 
