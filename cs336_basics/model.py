@@ -14,7 +14,7 @@ class Linear(nn.Module):
         std = math.sqrt(2 / (in_features + out_features))
         self.W = nn.Parameter(
             nn.init.trunc_normal_(
-                tensor=torch.zeros(size=(out_features, in_features)), mean=0, std=std, a=-3 * std, b=3 * std
+                tensor=torch.zeros(size=(out_features, in_features), device=device), mean=0, std=std, a=-3 * std, b=3 * std
             )
         )
 
@@ -123,10 +123,10 @@ class Block(nn.Module):
 
     def forward(self, x: torch.Tensor):
         """Need token positions to have proper RoPE"""
-        x = x + self.mha(
+        x = x + 1 * self.mha(
             self.rmsn1(x),
         )  # Attention with prenorm
-        x = x + self.ffn(self.rmsn2(x))  # SWIGLU FFN with prenorm
+        x = x + 1 * self.ffn(self.rmsn2(x))  # SWIGLU FFN with prenorm
         return x
 
 
@@ -177,7 +177,6 @@ class Transformer(nn.Module):
             sequence = tokenizer.encode(prompt) if prompt else tokenizer.encode("\n")
             response_length = len(sequence)
             end_of_text_token = tokenizer.encode("<|endoftext|>")[0]
-            print()
             sequence = torch.tensor(sequence, dtype=torch.long, device=self.device).unsqueeze(0)
             
             # turn sequence into torch tensor
@@ -311,6 +310,7 @@ class MultiHeadAttention(nn.Module):
         Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
         K = rearrange(self.Wk(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
         V = rearrange(self.Wv(x), "b s (head d_v) -> b head s d_v", d_v=self.d_v)
+
         if self.rope != None:  # We are using RoPE
             if token_positions == None:  # create default 0, 1, .... positions if nothing else is supplied
                 token_positions = torch.arange(Q.shape[-2])  # Seems brittle

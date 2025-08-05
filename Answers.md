@@ -158,6 +158,10 @@ Total flops A100, 400 steps, w. 1024 batch_size = 4309039353.69 TFLOPs
 Total time = 5115.19 days. 
 This shows the advantage of matmul optimizations done in the more recent gpus such as A100, as it decreases the required training time by 1/8. Still a long time, but this is 0.4T tokens. It is not that far of from SOTA training runs of 15T tokens like Kimi K2. Even with a smaller model this takes a lot of time using no mixed training and a single GPU.
 
+**Learning rate**
+I linearily increased the learning rate from 0.0001 to 0.01. It breaks down at iteration 400 with learning rate 0.0045. This is a likely upper bound for a full training run. I then did 3 training runs with 1000 steps of cosine scheduler using max_learning rate of [0.003, 0.004, 0.005] and min_learning rate 10% of max.
+
+
 
 
 **Final optimizations**

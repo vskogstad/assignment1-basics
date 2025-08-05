@@ -52,6 +52,7 @@ def resource_accounting(config):
                       "Attn flops": mha_flops/total_flops, 
                       "Lmhead flops": lmhead_flops/total_flops}
     print(f"Forward flops = {total_flops/1e12:.2f} TFLOPs")
+    flops_per_batch = total_flops * 3 * batch_size
     flops_train = 400_000 * 1024 * 3 * total_flops/1e12
     #print(f"Total flops A100, 400k steps, 1024 batch_size= {flops_train:.2f} TFLOPs")
     #print(f"Total time = {flops_train / (19.5 * 0.5 * 3600 * 24):.2f} days")
@@ -88,7 +89,7 @@ def resource_accounting(config):
     )  # 2 * tokens * num parameters (1 token for one forward pass)
     #print(f"{rough_forward_flops_estimate/1e12 = :.2f} TFLOPs")
 
-    return total_parameters, flops_per_part
+    return flops_per_batch  # FLOPs for forward and backward pass per batch
 
 
 if __name__ == "__main__":

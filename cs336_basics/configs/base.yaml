@@ -16,16 +16,16 @@ tokenizer_merges_path: "data/tokenizer_data/merges_tiny.pkl"
 
 # Training configuration
 dtype: float32 # bfloat16
-batch_size: 2
-min_learning_rate: 0.001
-max_learning_rate: 0.01
+batch_size: 128
+min_learning_rate: 0.0001
+max_learning_rate: 0.001
 weight_decay: 0.01
-warmup_steps: 10
+warmup_steps: 50
 total_steps: 1001
-cosine_cycle_steps: 900
+cosine_cycle_steps: 951
 betas: [0.9, 0.999]
 eps: 1.0e-8
-muon_momemtum: 0.95
+muon_momentum: 0.95
 grad_clip_norm: 1.0
 optimizer: "adamw"
 scheduler: "cosine"
@@ -33,9 +33,9 @@ scheduler: "cosine"
 # Experiment configuration
 experiment_name: "base_cpu"
 seed: 42
-log_interval: 100
+log_interval: 10
 eval_interval: 500
 save_interval: 1000
 output_dir: "cs336_basics/configs/experiments"
-wandb_project: "lm_training"
+wandb_project: null
 from_checkpoint: null #"cs336_basics/checkpoints/baseline_2000.pth"
