@@ -1,5 +1,10 @@
 # Large data files
-data/
+data/text_data/
+data/training_data/owt_train.npy
+data/training_data/owt_valid.npy
+data/training_data/tiny_train.npy
+
+
 
 # Scalene output files
 profile.json
