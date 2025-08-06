@@ -28,11 +28,15 @@ from cs336_basics.utils import resource_accounting
 
 def train(cfg: Config):
     """Main training loop
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--optimizer", type=torch.optim.Optimizer, help="Optimizer to use"
-    )
+    Initializes a training run based on parameters in config and cmd-line arguments. --config is a required cmd-line argument
     """
+    # Reproducability. 
+    # Note that the regular random module is used for sampling responses from the model. Not seeded cause I like seeing new text.
+    torch.manual_seed(cfg.seed)
+    torch.cuda.manual_seed_all(cfg.seed)
+    rng = np.random.default_rng(cfg.seed)
+    
+
     #
     if torch.cuda.is_available():
         max_flops = 989e12 / 2  # TF32 Tensor Core without sparsity.
@@ -43,11 +47,11 @@ def train(cfg: Config):
 
     # torch.set_default_dtype(dtype)
     print(f"Using {device} and {cfg.dtype}")
-    print(f"Processing {cfg.batch_size * cfg.context_length * cfg.total_steps}")
+    print(f"Processing {cfg.batch_size * cfg.context_length * cfg.total_steps:,} tokens")
 
     torch.set_float32_matmul_precision("high")
     torch.autograd.set_detect_anomaly(True)
-    model = get_model(cfg, device)  # torch.compile(get_model(cfg, device))
+    model = get_model(cfg, device) if device == torch.device("cpu") else torch.compile(get_model(cfg, device))
     """for name, param in model.named_parameters():
         if 'rmsn' in name and 'weights' in name:
             param.requires_grad = False
@@ -74,8 +78,7 @@ def train(cfg: Config):
     chunk_steps = 0
     chunk_loss = 0
     t_0 = time.time_ns()
-    torch.manual_seed(cfg.seed)
-    torch.cuda.manual_seed_all(cfg.seed)
+    
 
     # Load from checkpoint
     if cfg.from_checkpoint:
@@ -87,7 +90,7 @@ def train(cfg: Config):
     # Training loop
     for step in range(current_step, cfg.total_steps):
         x, y = get_batch(
-            dataset=train_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device
+            dataset=train_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device, rng=rng
         )
 
         optimizer.zero_grad()
@@ -124,7 +127,8 @@ def train(cfg: Config):
         chunk_steps += 1
         if step % cfg.log_interval == 0:
             loss_accumulated = chunk_loss / chunk_steps
-
+            if device == torch.device("cuda"):
+                torch.cuda.synchronize()
             t_1 = time.time_ns()
             chunk_time = t_1 - t_0
             t_0 = time.time_ns()
@@ -141,45 +145,20 @@ def train(cfg: Config):
                 run.log({"Step": step, "Loss": loss_accumulated, "tok/ms": token_per_s, "lr": new_lr, "MFU": {mfu}})
 
         if step % 25 == 0:
-            print(f"\n=== Step {step} Weight Analysis ===")
-
-            # 1. Embedding weights
-            emb_std = model.embedding.embedding.std().item()
-            emb_max = model.embedding.embedding.abs().max().item()
-            print(f"Embedding: std={emb_std:.4f}, max={emb_max:.4f}")
-
-            # 2. Attention weights (first few layers)
-            for i in range(min(3, len(model.layers))):
-                layer = model.layers[i]
-                # Check attention projection weights
-                for name, param in layer.mha.named_parameters():
-                    if "weight" in name or "W" in name:
-                        std = param.std().item()
-                        max_val = param.abs().max().item()
-                        print(f"Layer {i} MHA {name}: std={std:.4f}, max={max_val:.4f}")
-
-                # Check FFN weights
-                for name, param in layer.ffn.named_parameters():
-                    if "w" in name:
-                        std = param.std().item()
-                        max_val = param.abs().max().item()
-                        print(f"Layer {i} FFN {name}: std={std:.4f}, max={max_val:.4f}")
-
-            # 3. Output head
-            head_std = model.lm_head.W.std().item()
-            head_max = model.lm_head.W.abs().max().item()
-            print(f"LM Head: std={head_std:.4f}, max={head_max:.4f}")
-
-            # 4. Current output variance
-            print(f"Y_pred range: [{y_pred.min().item():.3f}, {y_pred.max().item():.3f}]")
+            monitor_norms(model, step, y_pred)
         # validation
         if step % cfg.eval_interval == 0 and step != 0:
             model.eval()
             with torch.no_grad():
-                print(f"\nCalculating validation loss. Using batch size: {len(val_data)}")
+                print(f"\nCalculating validation loss. Number of batches needed: {len(val_data) / (cfg.batch_size * cfg.context_length)}")
                 x_val, y_val = get_batch(
-                    dataset=val_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device
-                )  # TODO Run eval on whole test-set.
+                    dataset=val_data,
+                    batch_size=cfg.batch_size,
+                    context_length=cfg.context_length,
+                    device=device,
+                    rng=rng
+                    #starting_pos=0,
+                )  # TODO Run eval on whole validation set isntead of random samples.
                 y_pred = model(x_val)
                 val_loss = cross_entropy(pred=y_pred, targets=y_val)
                 if cfg.wandb_project:
@@ -200,6 +179,50 @@ def train(cfg: Config):
 
     if cfg.wandb_project:
         run.finish()
+    
+
+def monitor_norms(model, step, y_pred):
+    print(f"\n=== Step {step} Weight Analysis ===")
+    # 1. Embedding weights
+    emb_std = model.embedding.embedding.std().item()
+    emb_max = model.embedding.embedding.abs().max().item()
+    print(f"Embedding: std={emb_std:.4f}, max={emb_max:.4f}")
+
+    # 2. Attention weights (first few layers)
+    for i in range(min(3, len(model.layers))):
+        layer = model.layers[i]
+        # Check attention projection weights
+        for name, param in layer.mha.named_parameters():
+            if "weight" in name or "W" in name:
+                std = param.std().item()
+                max_val = param.abs().max().item()
+
+                print(f"Layer {i} MHA {name}: std={std:.4f}, max={max_val:.4f}")
+
+        # Check FFN weights
+        for name, param in layer.ffn.named_parameters():
+            if "w" in name:
+                std = param.std().item()
+                max_val = param.abs().max().item()
+                print(f"Layer {i} FFN {name}: std={std:.4f}, max={max_val:.4f}")
+
+    # 3. Output head
+    head_std = model.lm_head.W.std().item()
+    head_max = model.lm_head.W.abs().max().item()
+    print(f"LM Head: std={head_std:.4f}, max={head_max:.4f}")
+
+    # 4. Current output variance
+    print(f"Y_pred range: [{y_pred.min().item():.3f}, {y_pred.max().item():.3f}]")
+
+    # Calculate l2_norm
+    norm_squared = 0
+    for name, param in model.named_parameters():
+        
+        if param.grad != None:
+            norm_squared += torch.linalg.vector_norm(param.grad) ** 2
+    l2_norm = math.sqrt(norm_squared)
+    print(f"L2 norm {l2_norm:.4f}")
+
 
 
 def get_optimizer(cfg: Config, model):
@@ -290,15 +313,28 @@ def load_checkpoint(
     return checkpoint["iteration"]
 
 
-def get_batch(dataset: np.array, batch_size: int, context_length: int, device: str):
-    """Gets a random batch of x and y tensors for the model to train on"""
+def get_batch(dataset: np.array, batch_size: int, context_length: int, device: str, rng=None, starting_pos=None):
+    """
+    Gets a random or fixed batch of x and y tensors for the model to train on. If a rng is passed, it will be used. 
+    If a starting position is passed it will be used.
+    """
 
     if len(dataset) < context_length:
         raise ValueError("Dataset smaller than context length, not possible to create batches")
 
-    # Generate random starting indices
+    # Generate random starting indices unless we get passed a generator
     max_start_idx = len(dataset) - context_length - 1
-    starts = np.random.randint(0, max_start_idx + 1, size=batch_size)
+    if rng:
+        assert(starting_pos==None) # we should never be passing both a generator and a fixed starting point
+        starts = rng.integers(0, max_start_idx + 1, size=batch_size)
+    elif starting_pos:
+        raise NotImplementedError()
+        # We want to test for the entire dataset.
+        # We have batches of context_length we then want to make sure our starting point are context_lengt apart, starting from the first
+        starts = np.arange(batch_size) * context_length + starting_pos
+        print(starts)
+    else:
+        starts = np.random.randint(0, max_start_idx + 1, size=batch_size)
 
     # Create index arrays for vectorized sampling
     indices = starts[:, None] + np.arange(context_length + 1)
@@ -307,7 +343,7 @@ def get_batch(dataset: np.array, batch_size: int, context_length: int, device: s
 
     x = batch[:, :-1]
     y = batch[:, 1:]
-
+    #print(x[0][0])
     return x, y
 
 
@@ -491,11 +527,10 @@ class MuonWithAdamW(torch.optim.Optimizer):
 
                     grad = p.grad.data  # Get the gradient of loss with respect to p.
                     B_t = momentum * B_t + grad
-                    O_t = newtonschulz5(B_t, steps=5, eps=1e-7)
+                    O_t = newtonschulz5(B_t, steps=5, eps=1e-7) # Approximate O_t using newton schulz
 
                     p.data -= lr * O_t  # Update weight tensor in-place.
                     p.data -= lr * weight_decay * p.data  # Apply weight decay
-                    # state["t"] = t + 1  # Increment iteration number.
                     state["momentum"] = B_t
 
         return loss

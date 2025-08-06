@@ -181,12 +181,12 @@ class Transformer(nn.Module):
             
             # turn sequence into torch tensor
             while response_length < max_tokens:
-                out = self(sequence)
+                out = self(sequence) # forward pass
                 logits = softmax(out, dimension=-1, temp=temp)
                 logits = logits[:,-1,:].squeeze() # Care only about the last word(-1) in the sequence, squeeze out other dimensions
 
                 # Implementing top P samling. Likely inefficient.
-                # Top p samples from the n samples that sum to top_p. Unlike top_k which samples from the k highest probs. n is dynamic, k is fixed.
+                # Top p samples from the n samples that sum to top_p. Unlike top_k which samples from the k highest probs. n's range of possibilities is dynamic, k is fixed.
                 p, indices = torch.sort(logits) 
                 i = 0
                 p_accum = 0

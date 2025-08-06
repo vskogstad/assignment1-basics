@@ -13,8 +13,8 @@ experiment_name: base_cpu
 from_checkpoint: null
 grad_clip_norm: 1.0
 log_interval: 10
-max_learning_rate: 0.01
-min_learning_rate: 0.001
+max_learning_rate: 0.1
+min_learning_rate: 0.01
 model_name: transformer
 muon_momentum: 0.95
 num_heads: 2
