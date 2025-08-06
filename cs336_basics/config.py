@@ -84,7 +84,7 @@ def get_parser():
     parser.add_argument("--warmup_steps", type=int)
     parser.add_argument("--max_learning_rate", type=float)
     parser.add_argument("--min_learning_rate", type=float)
-    parser.add_argument("--weight_decay", type=int)
+    parser.add_argument("--weight_decay", type=float)
     parser.add_argument("--optimizer", type=str)
     parser.add_argument("--eps", type=int)
     parser.add_argument("--betas", type=tuple)

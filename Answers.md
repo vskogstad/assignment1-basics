@@ -160,7 +160,7 @@ This shows the advantage of matmul optimizations done in the more recent gpus su
 
 **Learning rate**
 I linearily increased the learning rate from 0.0001 to 0.01. It breaks down at iteration 400 with learning rate 0.0045. This is a likely upper bound for a full training run. I then did 3 training runs with 1000 steps of cosine scheduler using max_learning rate of [0.003, 0.004, 0.005] and min_learning rate 10% of max.
-
+Found a bug in my softmax function that made training unstable. Reran experiments with linear increase over 1000 steps. No divergence and final loss of 1.88 which is very good. Worse results when trying to use 0.01 as the peak learning rate with 50 or 200 steps of warmup. The model does not converge to similar losses as my "LR search". I then tried to follow https://arxiv.org/html/2503.04715v1. They defined their step law as 1.79 * N**(-0.713) * D **(0.307). They reccomend really large batch sizes (I assume because they want to train for really long to find the optimal point in the loss landscape) With my 
 
 
 

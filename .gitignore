@@ -3,7 +3,7 @@ data/text_data/
 data/training_data/owt_train.npy
 data/training_data/owt_valid.npy
 data/training_data/tiny_train.npy
-
+cs336_basics/configs/experiments/checkpoints/
 
 
 # Scalene output files

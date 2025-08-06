@@ -29,11 +29,13 @@ def resource_accounting(config):
 
     # Parameters
     positional_params = context_length * d_model if not theta else 0 # If RoPE, no positional params
-    embedding_params = vocab_size * d_model * (2 - weight_sharing)  # covers both embedding and final lm_head. Only one matrix due to weight sharing for gpt-2
+    embedding_params = vocab_size * d_model  # covers both embedding and final lm_head. Only one matrix due to weight sharing for gpt-2
+    lm_head_params = vocab_size * d_model * (1 - weight_sharing)
     ffn_params = num_layers * (num_weight_matrices * d_ff * d_model)  # 3 matrices with GLU, 2 with just LU
     mha_params = num_layers * (4 * num_heads * d_model * d_model / num_heads)  # 4 = K,Q,V,O
     ln_params = num_layers * (2 * d_model * 2) + d_model * 2  #
-    total_parameters = positional_params + embedding_params + ffn_params + mha_params + ln_params
+    non_embedding_params = positional_params + ffn_params + mha_params + ln_params + lm_head_params
+    total_parameters = non_embedding_params + embedding_params
     print(f"Total parameters = {total_parameters / (1000 * 1000 ):.2f} M")
 
     # FLOPS (skipped rmsnorm)
@@ -89,8 +91,12 @@ def resource_accounting(config):
     )  # 2 * tokens * num parameters (1 token for one forward pass)
     #print(f"{rough_forward_flops_estimate/1e12 = :.2f} TFLOPs")
 
-    return flops_per_batch  # FLOPs for forward and backward pass per batch
+    return flops_per_batch, non_embedding_params  # FLOPs for forward and backward pass per batch
 
+def step_law_lr(len_data, non_embedding_params):
+    opti_batch = 0.58 * len_data ** 0.571
+    opti_lr = 1.79 * non_embedding_params **(-0.713) * len_data **0.307
+    print(f"Dataset is {len_data:,} tokens. \nOptimal batch size = {opti_batch}. \nOptimal lr = {opti_lr:.4f}")
 
 if __name__ == "__main__":
     gpt2xl_cfg = ResourceConfig(vocab_size=50257, context_length=1024, num_layers=48, d_model=1600, num_heads=25, d_ff=6400)

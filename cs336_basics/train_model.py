@@ -17,7 +17,7 @@ import wandb
 from cs336_basics.config import Config, get_parser
 from cs336_basics.model import Transformer
 from cs336_basics.tokenizer import Tokenizer
-from cs336_basics.utils import resource_accounting
+from cs336_basics.utils import resource_accounting, step_law_lr
 
 # TODO: Muon optimizer verified.
 # Perplexity measurement.
@@ -54,7 +54,7 @@ def train(cfg: Config):
         if 'rmsn' in name and 'weights' in name:
             param.requires_grad = False
             print(f"Frozen {name}")"""
-    flops_per_batch = resource_accounting(cfg)  # Print info about the current run to the log
+    flops_per_batch, non_embedding_params = resource_accounting(cfg)  # Print info about the current run to the log
 
     assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
 
@@ -67,6 +67,8 @@ def train(cfg: Config):
         vocab_filepath=cfg.tokenizer_vocab_path,
         merges_filepath=cfg.tokenizer_merges_path,
     )
+    step_law_lr(len_data=327_680_000, non_embedding_params = non_embedding_params) # For our specific task use fixed len_data
+    #step_law_lr(len_data=len(train_data), non_embedding_params =non_embedding_params)
 
     # Initialize logging
     if cfg.wandb_project:
@@ -141,8 +143,8 @@ def train(cfg: Config):
             if cfg.wandb_project:
                 run.log({"Step": step, "Loss": loss_accumulated, "tok/ms": token_per_s, "lr": new_lr, "MFU": {mfu}})
 
-        if step % 25 == 0:
-            monitor_norms(model, step, y_pred)
+        #if step % 25 == 0:
+            #monitor_norms(model, step, y_pred)
         # validation
         if step % cfg.eval_interval == 0 and step != 0:
             model.eval()
@@ -163,8 +165,8 @@ def train(cfg: Config):
                 if cfg.wandb_project:
                     wandb.log({"Validation loss": val_loss})
                 # sample from the model
-                print(f"Sampling from the model at step {step} with validation loss {val_loss}")
-                model.sample(tokenizer=tokenizer, prompt="It was a nice day")
+                #print(f"Sampling from the model at step {step} with validation loss {val_loss}")
+                #model.sample(tokenizer=tokenizer, prompt="It was a nice day")
             model.train()
 
         # checkpointing

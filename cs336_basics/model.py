@@ -327,7 +327,7 @@ class MultiHeadAttention(nn.Module):
 @staticmethod
 def softmax(x: torch.Tensor, dimension: int, temp: int = 1):
     """TODO: Check stability of this might be better with just torch.max(x)"""
-    max_x = torch.max(x[dimension])
+    max_x = torch.max(x, dim=dimension, keepdim=True)[0]
     x_mod = (x - max_x) / temp
     result = torch.exp(x_mod) / torch.sum(torch.exp(x_mod), dim=dimension, keepdim=True)
     return result
