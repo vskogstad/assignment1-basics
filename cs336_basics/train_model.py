@@ -23,19 +23,17 @@ from cs336_basics.utils import resource_accounting
 # Perplexity measurement.
 # Train model on gpu
 # Ablations and hyper-parameter search
-#
 
 
 def train(cfg: Config):
     """Main training loop
     Initializes a training run based on parameters in config and cmd-line arguments. --config is a required cmd-line argument
     """
-    # Reproducability. 
+    # Reproducability.
     # Note that the regular random module is used for sampling responses from the model. Not seeded cause I like seeing new text.
     torch.manual_seed(cfg.seed)
     torch.cuda.manual_seed_all(cfg.seed)
     rng = np.random.default_rng(cfg.seed)
-    
 
     #
     if torch.cuda.is_available():
@@ -78,7 +76,6 @@ def train(cfg: Config):
     chunk_steps = 0
     chunk_loss = 0
     t_0 = time.time_ns()
-    
 
     # Load from checkpoint
     if cfg.from_checkpoint:
@@ -150,14 +147,16 @@ def train(cfg: Config):
         if step % cfg.eval_interval == 0 and step != 0:
             model.eval()
             with torch.no_grad():
-                print(f"\nCalculating validation loss. Number of batches needed: {len(val_data) / (cfg.batch_size * cfg.context_length)}")
+                print(
+                    f"\nCalculating validation loss. Number of batches needed: {len(val_data) / (cfg.batch_size * cfg.context_length)}"
+                )
                 x_val, y_val = get_batch(
                     dataset=val_data,
                     batch_size=cfg.batch_size,
                     context_length=cfg.context_length,
                     device=device,
-                    rng=rng
-                    #starting_pos=0,
+                    rng=rng,
+                    # starting_pos=0,
                 )  # TODO Run eval on whole validation set isntead of random samples.
                 y_pred = model(x_val)
                 val_loss = cross_entropy(pred=y_pred, targets=y_val)
@@ -179,7 +178,7 @@ def train(cfg: Config):
 
     if cfg.wandb_project:
         run.finish()
-    
+
 
 def monitor_norms(model, step, y_pred):
     print(f"\n=== Step {step} Weight Analysis ===")
@@ -217,12 +216,10 @@ def monitor_norms(model, step, y_pred):
     # Calculate l2_norm
     norm_squared = 0
     for name, param in model.named_parameters():
-        
         if param.grad != None:
             norm_squared += torch.linalg.vector_norm(param.grad) ** 2
     l2_norm = math.sqrt(norm_squared)
     print(f"L2 norm {l2_norm:.4f}")
-
 
 
 def get_optimizer(cfg: Config, model):
@@ -315,7 +312,7 @@ def load_checkpoint(
 
 def get_batch(dataset: np.array, batch_size: int, context_length: int, device: str, rng=None, starting_pos=None):
     """
-    Gets a random or fixed batch of x and y tensors for the model to train on. If a rng is passed, it will be used. 
+    Gets a random or fixed batch of x and y tensors for the model to train on. If a rng is passed, it will be used.
     If a starting position is passed it will be used.
     """
 
@@ -325,7 +322,7 @@ def get_batch(dataset: np.array, batch_size: int, context_length: int, device: s
     # Generate random starting indices unless we get passed a generator
     max_start_idx = len(dataset) - context_length - 1
     if rng:
-        assert(starting_pos==None) # we should never be passing both a generator and a fixed starting point
+        assert starting_pos == None  # we should never be passing both a generator and a fixed starting point
         starts = rng.integers(0, max_start_idx + 1, size=batch_size)
     elif starting_pos:
         raise NotImplementedError()
@@ -343,7 +340,7 @@ def get_batch(dataset: np.array, batch_size: int, context_length: int, device: s
 
     x = batch[:, :-1]
     y = batch[:, 1:]
-    #print(x[0][0])
+    # print(x[0][0])
     return x, y
 
 
@@ -527,7 +524,7 @@ class MuonWithAdamW(torch.optim.Optimizer):
 
                     grad = p.grad.data  # Get the gradient of loss with respect to p.
                     B_t = momentum * B_t + grad
-                    O_t = newtonschulz5(B_t, steps=5, eps=1e-7) # Approximate O_t using newton schulz
+                    O_t = newtonschulz5(B_t, steps=5, eps=1e-7)  # Approximate O_t using newton schulz
 
                     p.data -= lr * O_t  # Update weight tensor in-place.
                     p.data -= lr * weight_decay * p.data  # Apply weight decay
