@@ -25,6 +25,7 @@ from cs336_basics.utils import resource_accounting
 # Ablations and hyper-parameter search
 #
 
+
 def train(cfg: Config):
     """Main training loop
     parser = argparse.ArgumentParser()
@@ -32,29 +33,28 @@ def train(cfg: Config):
         "--optimizer", type=torch.optim.Optimizer, help="Optimizer to use"
     )
     """
-    # 
+    #
     if torch.cuda.is_available():
-        max_flops = 989e12 / 2 # TF32 Tensor Core without sparsity.
+        max_flops = 989e12 / 2  # TF32 Tensor Core without sparsity.
     else:
-        max_flops = float(inf)
+        max_flops = float("inf")
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     cfg.dtype = torch.bfloat16 if cfg.dtype == "bfloat16" else torch.float32
-    
+
     # torch.set_default_dtype(dtype)
     print(f"Using {device} and {cfg.dtype}")
     print(f"Processing {cfg.batch_size * cfg.context_length * cfg.total_steps}")
 
-    torch.set_float32_matmul_precision('high')
+    torch.set_float32_matmul_precision("high")
     torch.autograd.set_detect_anomaly(True)
-    model = torch.compile(get_model(cfg, device))
+    model = get_model(cfg, device)  # torch.compile(get_model(cfg, device))
     """for name, param in model.named_parameters():
         if 'rmsn' in name and 'weights' in name:
             param.requires_grad = False
             print(f"Frozen {name}")"""
-    flops_per_batch = resource_accounting(cfg) # Print info about the current run to the log
+    flops_per_batch = resource_accounting(cfg)  # Print info about the current run to the log
 
     assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
-
 
     optimizer = get_optimizer(cfg=cfg, model=model)
 
@@ -92,22 +92,21 @@ def train(cfg: Config):
 
         optimizer.zero_grad()
         y_pred = model(x)
-        #loss = cross_entropy(pred=y_pred, targets=y)
-
+        # loss = cross_entropy(pred=y_pred, targets=y)
 
         # Trying to search for nan-source using regular cross entropy
-        current_lrs = [param_group['lr'] for param_group in optimizer.param_groups]
+        """current_lrs = [param_group['lr'] for param_group in optimizer.param_groups]
         print(f"step = {step}, LRs = {current_lrs}")
         print(f"y_pred min/max: {y_pred.min().item():.3f} / {y_pred.max().item():.3f}")
         print(f"y_pred contains inf: {torch.isinf(y_pred).any()}")
-        print(f"y_pred contains nan: {torch.isnan(y_pred).any()}")
+        print(f"y_pred contains nan: {torch.isnan(y_pred).any()}")"""
         loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
 
         loss.backward()
 
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
 
-        if cfg.scheduler == "cosine": # temporary disabled to test varying lr across groups
+        if cfg.scheduler == "cosine":
             new_lr = get_lr_cosine(
                 step=step,
                 max_learning_rate=cfg.max_learning_rate,
@@ -116,7 +115,7 @@ def train(cfg: Config):
                 cosine_cycle_steps=cfg.cosine_cycle_steps,
             )
             for param_group in optimizer.param_groups:
-                param_group['lr'] = new_lr
+                param_group["lr"] = new_lr
 
         optimizer.step()
 
@@ -129,46 +128,48 @@ def train(cfg: Config):
             t_1 = time.time_ns()
             chunk_time = t_1 - t_0
             t_0 = time.time_ns()
+
             token_per_s = 1e6 * chunk_steps * cfg.batch_size * cfg.context_length / (chunk_time)
+            mfu = (flops_per_batch / (chunk_time * 1e-9)) / max_flops if max_flops != float("inf") else None
             print(
-                f"step = {step} | Loss = {loss_accumulated:.3f} | ns {chunk_time = :.2f} | tok/ms = {token_per_s:.3f} | lr = {new_lr} | MFU = {(flops_per_batch / (chunk_time*1e-9)) / max_flops}"
+                f"step = {step} | Loss = {loss_accumulated:.3f} | ns {chunk_time = :.2f} | tok/ms = {token_per_s:.3f} | lr = {new_lr} | MFU = {mfu}"
             )
 
             chunk_loss = 0
             chunk_steps = 0
             if cfg.wandb_project:
-                run.log({"Step": step, "Loss": loss_accumulated, "tok/ms": token_per_s, "lr": new_lr, "MFU": {(flops_per_batch / (chunk_time*1e-9)) / max_flops}})
-        # Add this comprehensive monitoring every 25 steps
+                run.log({"Step": step, "Loss": loss_accumulated, "tok/ms": token_per_s, "lr": new_lr, "MFU": {mfu}})
+
         if step % 25 == 0:
             print(f"\n=== Step {step} Weight Analysis ===")
-            
+
             # 1. Embedding weights
             emb_std = model.embedding.embedding.std().item()
             emb_max = model.embedding.embedding.abs().max().item()
             print(f"Embedding: std={emb_std:.4f}, max={emb_max:.4f}")
-            
+
             # 2. Attention weights (first few layers)
             for i in range(min(3, len(model.layers))):
                 layer = model.layers[i]
                 # Check attention projection weights
                 for name, param in layer.mha.named_parameters():
-                    if 'weight' in name or 'W' in name:
+                    if "weight" in name or "W" in name:
                         std = param.std().item()
                         max_val = param.abs().max().item()
                         print(f"Layer {i} MHA {name}: std={std:.4f}, max={max_val:.4f}")
-                
-                # Check FFN weights  
+
+                # Check FFN weights
                 for name, param in layer.ffn.named_parameters():
-                    if 'weight' in name or 'W' in name:
-                        std = param.std().item() 
+                    if "w" in name:
+                        std = param.std().item()
                         max_val = param.abs().max().item()
                         print(f"Layer {i} FFN {name}: std={std:.4f}, max={max_val:.4f}")
-            
+
             # 3. Output head
             head_std = model.lm_head.W.std().item()
             head_max = model.lm_head.W.abs().max().item()
             print(f"LM Head: std={head_std:.4f}, max={head_max:.4f}")
-            
+
             # 4. Current output variance
             print(f"Y_pred range: [{y_pred.min().item():.3f}, {y_pred.max().item():.3f}]")
         # validation
@@ -178,7 +179,7 @@ def train(cfg: Config):
                 print(f"\nCalculating validation loss. Using batch size: {len(val_data)}")
                 x_val, y_val = get_batch(
                     dataset=val_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device
-                ) # TODO Run eval on whole test-set.
+                )  # TODO Run eval on whole test-set.
                 y_pred = model(x_val)
                 val_loss = cross_entropy(pred=y_pred, targets=y_val)
                 if cfg.wandb_project:
@@ -226,17 +227,16 @@ def get_optimizer(cfg: Config, model):
     elif cfg.optimizer == "muon":
         optimizer = MuonWithAdamW(
             [
-                {"params": hidden_matrix_params, "weight_decay": cfg.weight_decay, "lr":0.05, "use_muon": True},
-                {"params": embed_params, "weight_decay": 0, "lr":0.6, "use_muon": False},
-                {"params": scalar_params, "weight_decay": 0, "lr":0.04, "use_muon": False},
-                {"params": head_params, "weight_decay": cfg.weight_decay, "lr":0.22, "use_muon": False},
+                {"params": hidden_matrix_params, "weight_decay": cfg.weight_decay, "lr": 0.05, "use_muon": True},
+                {"params": embed_params, "weight_decay": 0, "lr": 0.6, "use_muon": False},
+                {"params": scalar_params, "weight_decay": 0, "lr": 0.04, "use_muon": False},
+                {"params": head_params, "weight_decay": cfg.weight_decay, "lr": 0.22, "use_muon": False},
             ],
-            #lr=cfg.max_learning_rate,
+            # lr=cfg.max_learning_rate,
             momentum=cfg.muon_momentum,
             weight_decay=cfg.weight_decay,
             betas=cfg.betas,
             eps=cfg.eps,
-
         )
     else:
         raise NotImplementedError(f"No optimizer named {cfg.optimizer} has been implemented.")
@@ -439,6 +439,7 @@ class Muon(torch.optim.Optimizer):
 
         return loss
 
+
 class MuonWithAdamW(torch.optim.Optimizer):
     def __init__(self, params, lr=1e-3, momentum=0.95, betas=(0.9, 0.999), weight_decay=1e-4, eps=1e-8):
         if lr < 0:
@@ -462,8 +463,8 @@ class MuonWithAdamW(torch.optim.Optimizer):
             for p in group["params"]:
                 if p.grad is None:
                     continue
-            
-                if not group["use_muon"]: # Use adamw
+
+                if not group["use_muon"]:  # Use adamw
                     state = self.state[p]  # Get state associated with p.
                     t = state.get("t", 1)  # Get iteration number from the state, or initial value.
                     m = state.get(
@@ -484,7 +485,7 @@ class MuonWithAdamW(torch.optim.Optimizer):
                     state["m"] = m
                     state["v"] = v
 
-                else: # Use Muon
+                else:  # Use Muon
                     state = self.state[p]  # Get state associated with p.
                     B_t = state.get("B_t", torch.zeros_like(p.data))
 
