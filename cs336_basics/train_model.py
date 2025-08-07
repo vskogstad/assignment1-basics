@@ -96,10 +96,10 @@ def train(cfg: Config):
 
         optimizer.zero_grad()
         y_pred = model(x)
-        # loss = cross_entropy(pred=y_pred, targets=y)
+        loss = cross_entropy(pred=y_pred, targets=y)
 
         # Trying to search for nan-source using regular cross entropy
-        loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
+        #loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
         loss.backward()
 
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
