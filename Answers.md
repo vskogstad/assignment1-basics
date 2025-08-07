@@ -165,11 +165,13 @@ Found a bug in my softmax function that made training unstable. I then reran exp
 I then tried to follow https://arxiv.org/html/2503.04715v1. They defined their step law as LR_optim = 1.79 * N**(-0.713) * D **(0.307). They reccomend really large batch sizes (and they train for a lot of tokens to find optimal point in the loss landscape). With my limited amount of tokens, I don't think we can go all the way up to the perfect batch size as the number of steps will be to small. 
 As the LR is not really connected to the batch size, I just use it directly giving 0.005 as max LR. min LR of 0.00001. Doing this for a full training loss yields a loss of 1.33.
 
-After this I tried running the Muon optimizer with 0 tuning of LR, yielding worse performance and a final loss of 1.7. Looking at https://arxiv.org/abs/2502.16982 I used their modified optimization formula for converting tuned adam learning rates. Running the model using Muon yielded a final loss of  .
+After this I tried running the Muon optimizer with 0 tuning of LR, yielding worse performance and a final loss of 1.7. Looking at https://arxiv.org/abs/2502.16982 I used their modified optimization formula for converting tuned adam learning rates. I found a bug in my implementation which made the previous result irrellevant. Running the model using Muon yielded a final loss of 1.35 with half the training data of the adamw-run (No actual tuning for muon).
 
 
 **Batch-size experiment**
 Reccomended batch sizes in literature are high, both for system reasons and for extracting generalized learning across the batch. Given our very limited amount of tokens, where our model is nowhere near overtrained, a theoretically optimal batch size, will give very few steps (< 26 steps for our case). Taking more steps in roughly the right direction is going to give a lower final loss than fewer steps in exactly the right direction. (Although the later would probably yield a better model with continued training).
+
+I started tuning with as high a batch size as I could fit (512) and decreased to 256, 128, 64 and 1. It reached the lowest loss for for 128 though the MFU was better with high
 
 
 **Generated text**
@@ -184,16 +186,21 @@ The model is now keeping track of the same person staying in the story across se
 
 **Layer norm ablation**
 
+Crashes almost directly after warmup. Loss goes down then explodes throughout the warmup phase. Get NaNs in the end. As expected. 
+
 
 **Post norm vs pre-norm**
 
+Trains ok with post-norm but gets slightly worse, loss and MFU.
 
 **NoPE vs RoPE**
 
+Much like post norm, the NoPE-version trains fine, but has slightly worse loss than RoPE.
 
 
 **SILU vs SwiGLU**
 
+Really poor final loss using SiLU. Interestingly, using SiLU instead of SwiGLU gives a lot better MFU. The loss is so much worse that I think it should be optimizeable, have not seen this kind of discrepancy in papers. If so, it could be a good option for time constrained challenges like the final leaderboard. (Alternatively I could try to improve the speed of the SwiGLU function instead)
 
 **Experiment on OWT**
 

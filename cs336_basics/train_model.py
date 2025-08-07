@@ -43,7 +43,7 @@ def train(cfg: Config):
         if cfg.dtype == "bfloat16":
             max_flops = 989e12  # BF16 Tensor Core without sparsity.
         else:
-            max_flops = 989e12 / 2  # TF32 Tensor Core without sparsity.
+            max_flops = 156e12 #989e12 / 2  # TF32 Tensor Core without sparsity.
     else:
         max_flops = float("inf")
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -550,12 +550,10 @@ class MuonWithAdamW(torch.optim.Optimizer):
                     O_t = newtonschulz5(B_t, steps=5, eps=1e-7)  # Approximate O_t using newton schulz
 
                     a_dim, b_dim = p.data.shape  # Finding the dimensions of the matrix to scale the learning rate
-                    p.data -= (
-                        lr * ((0.2 * O_t * math.sqrt(max(a_dim, b_dim))) + weight_decay * p.data)
-                    )  # Update weight tensor in-place and do weight decay. Scaled so we can use optimized parameters for adamw.
+                    p.data = p.data - lr * 0.2 * O_t * math.sqrt(max(a_dim, b_dim)) - (lr * weight_decay * p.data)  # Update weight tensor in-place and do weight decay. Scaled so we can use optimized parameters for adamw.
                     # p.data -= lr * (O_t + weight_decay * p.data)  # Update weight tensor in-place and do weight decay.
-
-                    state["momentum"] = B_t
+                    # Wt = Wt−1 - ηt(0.2·Ot · sqrt(max(A,B))+λWt−1)
+                    state["B_t"] = B_t
 
         return loss
 
