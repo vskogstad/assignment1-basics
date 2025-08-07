@@ -13,7 +13,7 @@ experiment_name: base_cpu
 from_checkpoint: null
 glu: true
 grad_clip_norm: 1.0
-layer_norm: false
+layer_norm: true
 log_interval: 10
 max_learning_rate: 0.1
 min_learning_rate: 0.01

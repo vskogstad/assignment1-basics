@@ -1,7 +1,7 @@
 import argparse
 import math
 import os
-import time
+import timeit
 from collections.abc import Callable, Iterable
 from dataclasses import asdict
 from typing import IO, BinaryIO, Optional
@@ -40,7 +40,10 @@ def train(cfg: Config):
 
     #
     if torch.cuda.is_available():
-        max_flops = 989e12 / 2  # TF32 Tensor Core without sparsity.
+        if cfg.dtype == "bfloat16":
+            max_flops = 989e12  # BF16 Tensor Core without sparsity.
+        else:
+            max_flops = 989e12 / 2  # TF32 Tensor Core without sparsity.
     else:
         max_flops = float("inf")
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -76,7 +79,7 @@ def train(cfg: Config):
     current_tokens = 0
     chunk_steps = 0
     chunk_loss = 0
-    t_start = t_0 = time.perf_counter()
+    t_start = t_0 = timeit.default_timer()
 
     # Load from checkpoint
     if cfg.from_checkpoint:
@@ -122,14 +125,14 @@ def train(cfg: Config):
             loss_accumulated = chunk_loss / chunk_steps
             if device == torch.device("cuda"):
                 torch.cuda.synchronize()
-            t_1 = time.perf_counter()
+            t_1 = timeit.default_timer()
             chunk_time = t_1 - t_0
-            t_0 = time.perf_counter()
+            t_0 = timeit.default_timer()
 
             token_per_s = chunk_steps * cfg.batch_size * cfg.context_length / (chunk_time)
-            mfu = (flops_per_batch / (chunk_time )) / max_flops if max_flops != float("inf") else None
+            mfu = (flops_per_batch / (chunk_time)) / max_flops if max_flops != float("inf") else None
             print(
-                f"step = {step} | Loss = {loss_accumulated:.3f} | ns {chunk_time = :.2f} | tok/ms = {token_per_s:.3f} | lr = {new_lr} | MFU = {mfu}"
+                f"step = {step} | Loss = {loss_accumulated:.3f} | s {chunk_time = :.2f} | tok/s = {token_per_s:,.1f} | lr = {new_lr:.5f} | MFU = {mfu}"
             )
 
             chunk_loss = 0
@@ -142,7 +145,7 @@ def train(cfg: Config):
                         "lr": new_lr,
                         "MFU": mfu,
                         "Step": step,
-                        "time": time.perf_counter() - t_start,
+                        "time": timeit.default_timer() - t_start,
                     },
                     step=current_tokens,
                 )
@@ -151,27 +154,12 @@ def train(cfg: Config):
         # monitor_norms(model, step, y_pred)
         # validation
         if step % cfg.eval_interval == 0 and step != 0:
-            model.eval()
-            with torch.no_grad():
-                print(
-                    f"\nCalculating validation loss. Number of batches needed: {len(val_data) / (cfg.batch_size * cfg.context_length)}"
-                )
-                x_val, y_val = get_batch(
-                    dataset=val_data,
-                    batch_size=cfg.batch_size,
-                    context_length=cfg.context_length,
-                    device=device,
-                    rng=rng,
-                    # starting_pos=0,
-                )  # TODO Run eval on whole validation set isntead of random samples.
-                y_pred = model(x_val)
-                val_loss = cross_entropy(pred=y_pred, targets=y_val)
-                if cfg.wandb_project:
-                    wandb.log({"Validation loss": val_loss}, step=current_tokens)
-                # sample from the model
-                # print(f"Sampling from the model at step {step} with validation loss {val_loss}")
-                # model.sample(tokenizer=tokenizer, prompt="It was a nice day")
-            model.train()
+            val_loss = calculate_loss(model, val_data, cfg, current_tokens, device, rng=rng)
+
+            if cfg.wandb_project:
+                wandb.log({"Validation loss": val_loss}, step=current_tokens)
+            # print(f"Sampling from the model at step {step}")
+            # model.sample(tokenizer=tokenizer, prompt="It was a nice day")
 
         # checkpointing
         if step % cfg.save_interval == 0 and step != 0:
@@ -184,7 +172,26 @@ def train(cfg: Config):
 
     if cfg.wandb_project:
         run.finish()
-    print(f"Total time {time.perf_counter() - t_start:3f} seconds spent.")
+    print(f"Total time {timeit.default_timer() - t_start:3f} seconds spent.")
+
+
+def calculate_loss(model, data, cfg, current_tokens, device, rng=None):
+    model.eval()
+    with torch.no_grad():
+        x_val, y_val = get_batch(
+            dataset=data,
+            batch_size=cfg.batch_size,
+            context_length=cfg.context_length,
+            device=device,
+            rng=rng,
+            # starting_pos=0,
+        )  # TODO Run eval on whole validation set isntead of random samples.
+        y_pred = model(x_val)
+        val_loss = cross_entropy(pred=y_pred, targets=y_val)
+
+
+    model.train()
+    return val_loss
 
 
 def monitor_norms(model, step, y_pred):
