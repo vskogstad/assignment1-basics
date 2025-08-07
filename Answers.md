@@ -159,10 +159,47 @@ Total time = 5115.19 days.
 This shows the advantage of matmul optimizations done in the more recent gpus such as A100, as it decreases the required training time by 1/8. Still a long time, but this is 0.4T tokens. It is not that far of from SOTA training runs of 15T tokens like Kimi K2. Even with a smaller model this takes a lot of time using no mixed training and a single GPU.
 
 **Learning rate**
-I linearily increased the learning rate from 0.0001 to 0.01. It breaks down at iteration 400 with learning rate 0.0045. This is a likely upper bound for a full training run. I then did 3 training runs with 1000 steps of cosine scheduler using max_learning rate of [0.003, 0.004, 0.005] and min_learning rate 10% of max.
-Found a bug in my softmax function that made training unstable. Reran experiments with linear increase over 1000 steps. No divergence and final loss of 1.88 which is very good. Worse results when trying to use 0.01 as the peak learning rate with 50 or 200 steps of warmup. The model does not converge to similar losses as my "LR search". I then tried to follow https://arxiv.org/html/2503.04715v1. They defined their step law as 1.79 * N**(-0.713) * D **(0.307). They reccomend really large batch sizes (I assume because they want to train for really long to find the optimal point in the loss landscape) With my 
+I linearily increased the learning rate from 0.0001 to 0.01. It breaks down at iteration 400 with learning rate 0.0045. This is a likely upper bound for a full training run. I then did 3 training runs with 1000 steps of cosine scheduler using max_learning rate of [0.003, 0.004, 0.005] and min_learning rate 10% of max. It failed for all three.
+Found a bug in my softmax function that made training unstable. I then reran experiments, increasing the LR linearly over 1000 steps to 0.01. I did not have any divergence as LR increased during this run, and ended up with a final loss of 1.88, which is surprisingly good. I got worse results when running for the same amount of steps and trying to use 0.01 as the peak learning rate with 50 or 200 steps of warmup. The model does not converge to similar losses as my linear "LR search". It seems like a long slow warmup is beneficial for the model.
+
+I then tried to follow https://arxiv.org/html/2503.04715v1. They defined their step law as LR_optim = 1.79 * N**(-0.713) * D **(0.307). They reccomend really large batch sizes (and they train for a lot of tokens to find optimal point in the loss landscape). With my limited amount of tokens, I don't think we can go all the way up to the perfect batch size as the number of steps will be to small. 
+As the LR is not really connected to the batch size, I just use it directly giving 0.005 as max LR. min LR of 0.00001. Doing this for a full training loss yields a loss of 1.33.
+
+After this I tried running the Muon optimizer with 0 tuning of LR, yielding worse performance and a final loss of 1.7. Looking at https://arxiv.org/abs/2502.16982 I used their modified optimization formula for converting tuned adam learning rates. Running the model using Muon yielded a final loss of  .
 
 
+**Batch-size experiment**
+Reccomended batch sizes in literature are high, both for system reasons and for extracting generalized learning across the batch. Given our very limited amount of tokens, where our model is nowhere near overtrained, a theoretically optimal batch size, will give very few steps (< 26 steps for our case). Taking more steps in roughly the right direction is going to give a lower final loss than fewer steps in exactly the right direction. (Although the later would probably yield a better model with continued training).
+
+
+**Generated text**
+
+The output is now mostly a sequence of words with correct spacing. Usage of punctation is there, but not always used correctly.
+
+
+
+
+The model is now keeping track of the same person staying in the story across sentences. Strength of the model is the most important parameter, but temperature and top_p when sampling also affects the results.
+
+
+**Layer norm ablation**
+
+
+**Post norm vs pre-norm**
+
+
+**NoPE vs RoPE**
+
+
+
+**SILU vs SwiGLU**
+
+
+**Experiment on OWT**
+
+
+
+This model has a larger vocabulary(less examples per token) and much more complex training data, requiring significantly more time and greater context length to learn from. As the model gets more noisy data it will take longer for it to learn the basics. 
 
 **Final optimizations**
 

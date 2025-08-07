@@ -16,6 +16,9 @@ class Config:
     d_ff: int
     context_length: int
     theta: int | None
+    pre_norm: bool
+    glu: bool
+    layer_norm: bool
 
     # data loading
     train_dataset_path: str
@@ -90,6 +93,9 @@ def get_parser():
     parser.add_argument("--betas", type=tuple)
     parser.add_argument("--batch_size", type=int)
     parser.add_argument("--wandb_project", type=str)
+    parser.add_argument("--pre_norm", type=bool)
+    parser.add_argument("--layer_norm", type=bool)
+    parser.add_argument("--glu", type=bool)
     
 
     return parser

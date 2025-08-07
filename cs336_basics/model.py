@@ -113,6 +113,37 @@ class Block(nn.Module):
         theta: int | None = None,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
+        glu: bool = True,
+    ):
+        super().__init__()
+        self.mha = MultiHeadAttention(
+            d_model=d_model, num_heads=num_heads, max_sequence_length=max_sequence_length, theta=theta, device=device, dtype=dtype)
+        self.rmsn1 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
+        if glu:
+            self.ffn = SWIGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
+        else:
+            self.ffn = SILU()
+        self.rmsn2 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
+
+    def forward(self, x: torch.Tensor):
+        """Pre norm"""
+        x = x + 1 * self.mha(
+            self.rmsn1(x),
+        )  # Attention with prenorm
+        x = x + 1 * self.ffn(self.rmsn2(x))  # SILU or SWIGLU FFN with prenorm
+        return x
+
+class PostNormBlock(nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        d_ff: int,
+        max_sequence_length: int | None = None,
+        theta: int | None = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+        glu: bool = True,
     ):
         super().__init__()
         self.mha = MultiHeadAttention(
@@ -122,11 +153,35 @@ class Block(nn.Module):
         self.rmsn2 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
 
     def forward(self, x: torch.Tensor):
-        """Need token positions to have proper RoPE"""
-        x = x + 1 * self.mha(
-            self.rmsn1(x),
-        )  # Attention with prenorm
-        x = x + 1 * self.ffn(self.rmsn2(x))  # SWIGLU FFN with prenorm
+        """Post norm"""
+        x = self.rmsn1(x + self.mha(x))  # Attention with postorm
+        x = self.rmsn2(x + self.ffn(x))  # SWIGLU FFN with postnorm
+        return x
+
+class NoLayerNormBlock(nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        d_ff: int,
+        max_sequence_length: int | None = None,
+        theta: int | None = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+        glu: bool = True,
+
+    ):
+        super().__init__()
+        self.mha = MultiHeadAttention(
+            d_model=d_model, num_heads=num_heads, max_sequence_length=max_sequence_length, theta=theta, device=device, dtype=dtype)
+        #self.rmsn1 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
+        self.ffn = SWIGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
+        #self.rmsn2 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
+
+    def forward(self, x: torch.Tensor):
+        """Post norm"""
+        x = x + self.mha(x)  #
+        x = x + self.ffn(x)  
         return x
 
 
@@ -142,12 +197,16 @@ class Transformer(nn.Module):
         theta: int | None = None,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
+        glu: bool = True,
+        pre_norm: bool = True,
+        layer_norm: bool = True,
     ):
         super().__init__()
         self.embedding = Embedding(num_embeddings=vocab_size, embeddings_dim=d_model, device=device, dtype=dtype)
+        block_module = self.get_block_module(glu, pre_norm, layer_norm) # For ablations, created separate modules to avoid branching in forward.
         self.layers = nn.Sequential(
             *[
-                Block(
+                block_module(
                     d_model=d_model,
                     num_heads=num_heads,
                     d_ff=d_ff,
@@ -155,6 +214,7 @@ class Transformer(nn.Module):
                     theta=theta,
                     device=device,
                     dtype=dtype,
+                    glu=glu,
                 )
                 for _ in range(num_layers)
             ]
@@ -170,6 +230,17 @@ class Transformer(nn.Module):
         x = self.lm_head(x)
         # y = softmax(x=x, dimension=-1)
         return x  # y
+    
+    def get_block_module(self, glu, pre_norm, layer_norm):
+        if glu + pre_norm + layer_norm < 2: # All of these are true by default, we just set one of them false at a time
+            raise NotImplementedError("Only setup to do one ablation at a time")
+        
+        if not layer_norm:
+            return NoLayerNormBlock
+        elif not pre_norm:
+            return PostNormBlock
+        
+        return Block # If not GLU or if no ablations we will return the regular block
 
     def sample(self, tokenizer, prompt: str | None = None, max_tokens: int = 256, temp: int = 1, top_p: int = 0.5):
         

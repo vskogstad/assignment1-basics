@@ -7,6 +7,9 @@ d_model: 512
 d_ff: 1344
 context_length: 256
 theta: 10000
+pre_norm: true
+layer_norm: true
+glu: true
 
 # data loading
 train_dataset_path: "data/training_data/tiny_train.npy"

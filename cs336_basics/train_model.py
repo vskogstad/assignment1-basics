@@ -19,10 +19,10 @@ from cs336_basics.model import Transformer
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.utils import resource_accounting, step_law_lr
 
-# TODO: Muon optimizer verified.
+# TODO: Muon optimizer verified to reach similar as best run with AdamW?
+# Reintroude own loss-calculation and see that we get same results. Monitor if MFU drops back to sub 5%!!!
 # Perplexity measurement.
-# Train model on gpu
-# Ablations and hyper-parameter search
+# Ablations ran
 
 
 def train(cfg: Config):
@@ -35,6 +35,9 @@ def train(cfg: Config):
     torch.cuda.manual_seed_all(cfg.seed)
     rng = np.random.default_rng(cfg.seed)
 
+    torch.set_float32_matmul_precision("high")  # Improved speed
+    # torch.autograd.set_detect_anomaly(True) # for bughunting
+
     #
     if torch.cuda.is_available():
         max_flops = 989e12 / 2  # TF32 Tensor Core without sparsity.
@@ -46,19 +49,12 @@ def train(cfg: Config):
     # torch.set_default_dtype(dtype)
     print(f"Using {device} and {cfg.dtype}")
     print(f"Processing {cfg.batch_size * cfg.context_length * cfg.total_steps:,} tokens")
-
-    torch.set_float32_matmul_precision("high")
-    torch.autograd.set_detect_anomaly(True)
-    model = get_model(cfg, device) if device == torch.device("cpu") else torch.compile(get_model(cfg, device))
-    """for name, param in model.named_parameters():
-        if 'rmsn' in name and 'weights' in name:
-            param.requires_grad = False
-            print(f"Frozen {name}")"""
     flops_per_batch, non_embedding_params = resource_accounting(cfg)  # Print info about the current run to the log
 
-    assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
-
+    # Load model, optimizer and scheduler
+    model = get_model(cfg, device) if device == torch.device("cpu") else torch.compile(get_model(cfg, device))
     optimizer = get_optimizer(cfg=cfg, model=model)
+    assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
 
     # Data loading
     train_data = np.load(cfg.train_dataset_path, mmap_mode="r")
@@ -67,17 +63,20 @@ def train(cfg: Config):
         vocab_filepath=cfg.tokenizer_vocab_path,
         merges_filepath=cfg.tokenizer_merges_path,
     )
-    step_law_lr(len_data=327_680_000, non_embedding_params = non_embedding_params) # For our specific task use fixed len_data
-    #step_law_lr(len_data=len(train_data), non_embedding_params =non_embedding_params)
+    step_law_lr(
+        len_data=327_680_000, non_embedding_params=non_embedding_params
+    )  # For our specific task use fixed len_data
+    # step_law_lr(len_data=len(train_data), non_embedding_params =non_embedding_params)
 
     # Initialize logging
     if cfg.wandb_project:
         wandb.login()
         run = wandb.init(project=cfg.wandb_project, config=asdict(cfg))
     current_step = 0
+    current_tokens = 0
     chunk_steps = 0
     chunk_loss = 0
-    t_0 = time.time_ns()
+    t_start = t_0 = time.perf_counter()
 
     # Load from checkpoint
     if cfg.from_checkpoint:
@@ -97,13 +96,7 @@ def train(cfg: Config):
         # loss = cross_entropy(pred=y_pred, targets=y)
 
         # Trying to search for nan-source using regular cross entropy
-        """current_lrs = [param_group['lr'] for param_group in optimizer.param_groups]
-        print(f"step = {step}, LRs = {current_lrs}")
-        print(f"y_pred min/max: {y_pred.min().item():.3f} / {y_pred.max().item():.3f}")
-        print(f"y_pred contains inf: {torch.isinf(y_pred).any()}")
-        print(f"y_pred contains nan: {torch.isnan(y_pred).any()}")"""
         loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
-
         loss.backward()
 
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
@@ -124,16 +117,17 @@ def train(cfg: Config):
         # Logging
         chunk_loss += loss.item()
         chunk_steps += 1
+        current_tokens += cfg.batch_size * cfg.context_length
         if step % cfg.log_interval == 0:
             loss_accumulated = chunk_loss / chunk_steps
             if device == torch.device("cuda"):
                 torch.cuda.synchronize()
-            t_1 = time.time_ns()
+            t_1 = time.perf_counter()
             chunk_time = t_1 - t_0
-            t_0 = time.time_ns()
+            t_0 = time.perf_counter()
 
-            token_per_s = 1e6 * chunk_steps * cfg.batch_size * cfg.context_length / (chunk_time)
-            mfu = (flops_per_batch / (chunk_time * 1e-9)) / max_flops if max_flops != float("inf") else None
+            token_per_s = chunk_steps * cfg.batch_size * cfg.context_length / (chunk_time)
+            mfu = (flops_per_batch / (chunk_time )) / max_flops if max_flops != float("inf") else None
             print(
                 f"step = {step} | Loss = {loss_accumulated:.3f} | ns {chunk_time = :.2f} | tok/ms = {token_per_s:.3f} | lr = {new_lr} | MFU = {mfu}"
             )
@@ -141,10 +135,20 @@ def train(cfg: Config):
             chunk_loss = 0
             chunk_steps = 0
             if cfg.wandb_project:
-                run.log({"Step": step, "Loss": loss_accumulated, "tok/ms": token_per_s, "lr": new_lr, "MFU": {mfu}})
+                run.log(
+                    data={
+                        "Loss": loss_accumulated,
+                        "tok/ms": token_per_s,
+                        "lr": new_lr,
+                        "MFU": mfu,
+                        "Step": step,
+                        "time": time.perf_counter() - t_start,
+                    },
+                    step=current_tokens,
+                )
 
-        #if step % 25 == 0:
-            #monitor_norms(model, step, y_pred)
+        # if step % 25 == 0:
+        # monitor_norms(model, step, y_pred)
         # validation
         if step % cfg.eval_interval == 0 and step != 0:
             model.eval()
@@ -163,10 +167,10 @@ def train(cfg: Config):
                 y_pred = model(x_val)
                 val_loss = cross_entropy(pred=y_pred, targets=y_val)
                 if cfg.wandb_project:
-                    wandb.log({"Validation loss": val_loss})
+                    wandb.log({"Validation loss": val_loss}, step=current_tokens)
                 # sample from the model
-                #print(f"Sampling from the model at step {step} with validation loss {val_loss}")
-                #model.sample(tokenizer=tokenizer, prompt="It was a nice day")
+                # print(f"Sampling from the model at step {step} with validation loss {val_loss}")
+                # model.sample(tokenizer=tokenizer, prompt="It was a nice day")
             model.train()
 
         # checkpointing
@@ -180,6 +184,7 @@ def train(cfg: Config):
 
     if cfg.wandb_project:
         run.finish()
+    print(f"Total time {time.perf_counter() - t_start:3f} seconds spent.")
 
 
 def monitor_norms(model, step, y_pred):
@@ -249,10 +254,10 @@ def get_optimizer(cfg: Config, model):
     elif cfg.optimizer == "muon":
         optimizer = MuonWithAdamW(
             [
-                {"params": hidden_matrix_params, "weight_decay": cfg.weight_decay, "lr": 0.05, "use_muon": True},
-                {"params": embed_params, "weight_decay": 0, "lr": 0.6, "use_muon": False},
-                {"params": scalar_params, "weight_decay": 0, "lr": 0.04, "use_muon": False},
-                {"params": head_params, "weight_decay": cfg.weight_decay, "lr": 0.22, "use_muon": False},
+                {"params": hidden_matrix_params, "weight_decay": cfg.weight_decay, "use_muon": True},
+                {"params": embed_params, "weight_decay": 0, "use_muon": False},
+                {"params": scalar_params, "weight_decay": 0, "use_muon": False},
+                {"params": head_params, "weight_decay": cfg.weight_decay, "use_muon": False},
             ],
             # lr=cfg.max_learning_rate,
             momentum=cfg.muon_momentum,
@@ -277,13 +282,10 @@ def get_model(cfg: Config, device):
             theta=cfg.theta,
             device=device,
             dtype=cfg.dtype,
+            pre_norm=cfg.pre_norm,
+            layer_norm=cfg.layer_norm,
+            glu=cfg.glu,
         )
-    elif cfg.model_name == "silu-transformer":
-        raise NotImplementedError()
-    elif cfg.model_name == "pre-norm-transformer":
-        raise NotImplementedError()
-    elif cfg.model_name == "no-ln-transformer":
-        raise NotImplementedError()
     else:
         raise NotImplementedError("Not implemented loading for model {cfg.model_name}")
 
@@ -438,6 +440,8 @@ class AdamW(torch.optim.Optimizer):
 
 
 class Muon(torch.optim.Optimizer):
+    """Implementation of the Muon optimizer. Just usable for matrices."""
+
     def __init__(self, params, lr=1e-3, momentum=0.95, weight_decay=1e-4, eps=1e-7):
         if lr < 0:
             raise ValueError(f"Invalid learning rate: {lr}")
@@ -476,7 +480,17 @@ class Muon(torch.optim.Optimizer):
 
 
 class MuonWithAdamW(torch.optim.Optimizer):
-    def __init__(self, params, lr=1e-3, momentum=0.95, betas=(0.9, 0.999), weight_decay=1e-4, eps=1e-8):
+    """
+    Uses the modified Muon with transfer of LR parameters from adamw using the following formula:
+    Wt = Wt−1 - ηt(0.2·Ot · sqrt(max(A,B))+λWt−1)
+    η = Learning rate
+    λ = weight decay
+    A,B is the matrix dimensions of the parameter
+
+    https://arxiv.org/abs/2502.16982
+    """
+
+    def __init__(self, params, lr=1e-3, momentum=0.95, betas=(0.9, 0.95), weight_decay=1e-4, eps=1e-8):
         if lr < 0:
             raise ValueError(f"Invalid learning rate: {lr}")
         defaults = {"lr": lr, "eps": eps, "momentum": momentum, "weight_decay": weight_decay, "betas": betas}
@@ -528,8 +542,12 @@ class MuonWithAdamW(torch.optim.Optimizer):
                     B_t = momentum * B_t + grad
                     O_t = newtonschulz5(B_t, steps=5, eps=1e-7)  # Approximate O_t using newton schulz
 
-                    p.data -= lr * O_t  # Update weight tensor in-place.
-                    p.data -= lr * weight_decay * p.data  # Apply weight decay
+                    a_dim, b_dim = p.data.shape  # Finding the dimensions of the matrix to scale the learning rate
+                    p.data -= (
+                        lr * ((0.2 * O_t * math.sqrt(max(a_dim, b_dim))) + weight_decay * p.data)
+                    )  # Update weight tensor in-place and do weight decay. Scaled so we can use optimized parameters for adamw.
+                    # p.data -= lr * (O_t + weight_decay * p.data)  # Update weight tensor in-place and do weight decay.
+
                     state["momentum"] = B_t
 
         return loss
