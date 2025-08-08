@@ -14,7 +14,11 @@ class Linear(nn.Module):
         std = math.sqrt(2 / (in_features + out_features))
         self.W = nn.Parameter(
             nn.init.trunc_normal_(
-                tensor=torch.zeros(size=(out_features, in_features), device=device), mean=0, std=std, a=-3 * std, b=3 * std
+                tensor=torch.zeros(size=(out_features, in_features), device=device),
+                mean=0,
+                std=std,
+                a=-3 * std,
+                b=3 * std,
             )
         )
 
@@ -33,7 +37,13 @@ class Embedding(nn.Module):
     ):
         super().__init__()
         self.embedding = nn.Parameter(
-            nn.init.trunc_normal_(tensor=torch.zeros(size=(num_embeddings, embeddings_dim), device=device, dtype=dtype), mean=0, std=1, a=-3, b=3)
+            nn.init.trunc_normal_(
+                tensor=torch.zeros(size=(num_embeddings, embeddings_dim), device=device, dtype=dtype),
+                mean=0,
+                std=1,
+                a=-3,
+                b=3,
+            )
         )
 
     def forward(self, token_ids: torch.Tensor):
@@ -76,17 +86,29 @@ class SWIGLU(nn.Module):
         std = math.sqrt(2 / (d_model + d_ff))
         self.w1 = nn.Parameter(
             nn.init.trunc_normal_(
-                tensor=torch.zeros(size=(d_ff, d_model), device=device, dtype=dtype), mean=0, std=std, a=-3 * std, b=3 * std
+                tensor=torch.zeros(size=(d_ff, d_model), device=device, dtype=dtype),
+                mean=0,
+                std=std,
+                a=-3 * std,
+                b=3 * std,
             )
         )
         self.w2 = nn.Parameter(
             nn.init.trunc_normal_(
-                tensor=torch.zeros(size=(d_model, d_ff), device=device, dtype=dtype), mean=0, std=std, a=-3 * std, b=3 * std
+                tensor=torch.zeros(size=(d_model, d_ff), device=device, dtype=dtype),
+                mean=0,
+                std=std,
+                a=-3 * std,
+                b=3 * std,
             )
         )
         self.w3 = nn.Parameter(
             nn.init.trunc_normal_(
-                tensor=torch.zeros(size=(d_ff, d_model), device=device, dtype=dtype), mean=0, std=std, a=-3 * std, b=3 * std
+                tensor=torch.zeros(size=(d_ff, d_model), device=device, dtype=dtype),
+                mean=0,
+                std=std,
+                a=-3 * std,
+                b=3 * std,
             )
         )
         self.silu = SILU()
@@ -117,7 +139,13 @@ class Block(nn.Module):
     ):
         super().__init__()
         self.mha = MultiHeadAttention(
-            d_model=d_model, num_heads=num_heads, max_sequence_length=max_sequence_length, theta=theta, device=device, dtype=dtype)
+            d_model=d_model,
+            num_heads=num_heads,
+            max_sequence_length=max_sequence_length,
+            theta=theta,
+            device=device,
+            dtype=dtype,
+        )
         self.rmsn1 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
         if glu:
             self.ffn = SWIGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
@@ -133,6 +161,7 @@ class Block(nn.Module):
         x = x + 1 * self.ffn(self.rmsn2(x))  # SILU or SWIGLU FFN with prenorm
         return x
 
+
 class PostNormBlock(nn.Module):
     def __init__(
         self,
@@ -147,7 +176,13 @@ class PostNormBlock(nn.Module):
     ):
         super().__init__()
         self.mha = MultiHeadAttention(
-            d_model=d_model, num_heads=num_heads, max_sequence_length=max_sequence_length, theta=theta, device=device, dtype=dtype)
+            d_model=d_model,
+            num_heads=num_heads,
+            max_sequence_length=max_sequence_length,
+            theta=theta,
+            device=device,
+            dtype=dtype,
+        )
         self.rmsn1 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
         self.ffn = SWIGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
         self.rmsn2 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
@@ -157,6 +192,7 @@ class PostNormBlock(nn.Module):
         x = self.rmsn1(x + self.mha(x))  # Attention with postorm
         x = self.rmsn2(x + self.ffn(x))  # SWIGLU FFN with postnorm
         return x
+
 
 class NoLayerNormBlock(nn.Module):
     def __init__(
@@ -169,19 +205,24 @@ class NoLayerNormBlock(nn.Module):
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
         glu: bool = True,
-
     ):
         super().__init__()
         self.mha = MultiHeadAttention(
-            d_model=d_model, num_heads=num_heads, max_sequence_length=max_sequence_length, theta=theta, device=device, dtype=dtype)
-        #self.rmsn1 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
+            d_model=d_model,
+            num_heads=num_heads,
+            max_sequence_length=max_sequence_length,
+            theta=theta,
+            device=device,
+            dtype=dtype,
+        )
+        # self.rmsn1 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
         self.ffn = SWIGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
-        #self.rmsn2 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
+        # self.rmsn2 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
 
     def forward(self, x: torch.Tensor):
         """Post norm"""
         x = x + self.mha(x)  #
-        x = x + self.ffn(x)  
+        x = x + self.ffn(x)
         return x
 
 
@@ -203,7 +244,9 @@ class Transformer(nn.Module):
     ):
         super().__init__()
         self.embedding = Embedding(num_embeddings=vocab_size, embeddings_dim=d_model, device=device, dtype=dtype)
-        block_module = self.get_block_module(glu, pre_norm, layer_norm) # For ablations, created separate modules to avoid branching in forward.
+        block_module = self.get_block_module(
+            glu, pre_norm, layer_norm
+        )  # For ablations, created separate modules to avoid branching in forward.
         self.layers = nn.Sequential(
             *[
                 block_module(
@@ -230,35 +273,36 @@ class Transformer(nn.Module):
         x = self.lm_head(x)
         # y = softmax(x=x, dimension=-1)
         return x  # y
-    
+
     def get_block_module(self, glu, pre_norm, layer_norm):
-        if glu + pre_norm + layer_norm < 2: # All of these are true by default, we just set one of them false at a time
+        if glu + pre_norm + layer_norm < 2:  # All of these are true by default, we just set one of them false at a time
             raise NotImplementedError("Only setup to do one ablation at a time")
-        
+
         if not layer_norm:
             return NoLayerNormBlock
         elif not pre_norm:
             return PostNormBlock
-        
-        return Block # If not GLU or if no ablations we will return the regular block
+
+        return Block  # If not GLU or if no ablations, we will return the regular block.
 
     def sample(self, tokenizer, prompt: str | None = None, max_tokens: int = 256, temp: int = 1, top_p: int = 0.5):
-        
         with torch.no_grad():
             sequence = tokenizer.encode(prompt) if prompt else tokenizer.encode("\n")
             response_length = len(sequence)
             end_of_text_token = tokenizer.encode("<|endoftext|>")[0]
             sequence = torch.tensor(sequence, dtype=torch.long, device=self.device).unsqueeze(0)
-            
+
             # turn sequence into torch tensor
             while response_length < max_tokens:
-                out = self(sequence) # forward pass
+                out = self(sequence)  # forward pass
                 logits = softmax(out, dimension=-1, temp=temp)
-                logits = logits[:,-1,:].squeeze() # Care only about the last word(-1) in the sequence, squeeze out other dimensions
+                logits = logits[
+                    :, -1, :
+                ].squeeze()  # Care only about the last word(-1) in the sequence, squeeze out other dimensions
 
                 # Implementing top P samling. Likely inefficient.
                 # Top p samples from the n samples that sum to top_p. Unlike top_k which samples from the k highest probs. n's range of possibilities is dynamic, k is fixed.
-                p, indices = torch.sort(logits) 
+                p, indices = torch.sort(logits)
                 i = 0
                 p_accum = 0
                 while p_accum < top_p:
@@ -266,15 +310,17 @@ class Transformer(nn.Module):
                     i += 1
                 p_mod = p[:i] / p_accum
                 indices_mod = indices[:i]
-                next_token = random.choices(population=indices_mod, weights=p_mod, k=1)[-1].unsqueeze(0).unsqueeze(0) # adding additional dimensions
-                
+                next_token = (
+                    random.choices(population=indices_mod, weights=p_mod, k=1)[-1].unsqueeze(0).unsqueeze(0)
+                )  # adding additional dimensions
+
                 sequence = torch.cat((sequence, next_token), dim=-1)
                 response_length += 1
                 if next_token == end_of_text_token:
                     break
-                
+
         print(tokenizer.decode(sequence.squeeze().tolist()))
-        return 
+        return
 
 
 class RoPE(nn.Module):
@@ -307,7 +353,8 @@ class RoPE(nn.Module):
 
     def rotate_half(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Except for comments, this is all Claude/Meta unfortuneately. I implemeted the transformer-version of Neox-RoPE, but that fails the test.
+        Except for comments, this is all Claude/Meta unfortuneately. I had implemeted the transformer-version of Neox-RoPE,
+        but that fails the test.
 
         Interleaved rotation: (-x2, x1, -x4, x3, -x6, x5, ...)
         This treats consecutive pairs as complex numbers: (x1, x2) -> (-x2, x1)
@@ -343,7 +390,7 @@ class RoPE(nn.Module):
 
         # print(f"{x_rope.shape=}")
         return x_rope
-    
+
 
 class MultiHeadAttention(nn.Module):
     def __init__(

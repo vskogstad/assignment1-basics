@@ -19,10 +19,14 @@ from cs336_basics.model import Transformer
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.utils import resource_accounting, step_law_lr
 
-# TODO: Muon optimizer verified to reach similar as best run with AdamW?
-# Reintroude own loss-calculation and see that we get same results. Monitor if MFU drops back to sub 5%!!!
+# Test the optimization with pytorch matrix-sizes.
+# Test muon with nesterov momentum
+# Test 3 different learning rates for Muon
+# Test 3 different warm-up lengths for Muon
+# Run Muon for full amount of tokens. Run validation loss
+# Upload OWT val and train to hugging face.
+# 
 # Perplexity measurement.
-# Ablations ran
 
 
 def train(cfg: Config):
@@ -43,7 +47,7 @@ def train(cfg: Config):
         if cfg.dtype == "bfloat16":
             max_flops = 989e12  # BF16 Tensor Core without sparsity.
         else:
-            max_flops = 156e12 #989e12 / 2  # TF32 Tensor Core without sparsity.
+            max_flops = 156e12  # 989e12 / 2  # TF32 Tensor Core without sparsity.
     else:
         max_flops = float("inf")
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -99,7 +103,7 @@ def train(cfg: Config):
         loss = cross_entropy(pred=y_pred, targets=y)
 
         # Trying to search for nan-source using regular cross entropy
-        #loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
+        # loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
         loss.backward()
 
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
@@ -153,9 +157,9 @@ def train(cfg: Config):
         # if step % 25 == 0:
         # monitor_norms(model, step, y_pred)
         # validation
-        if step % cfg.eval_interval == 0 and step != 0:
+        if step % cfg.eval_interval == 0:  # and step != 0:
             val_loss = calculate_loss(model, val_data, cfg, current_tokens, device, rng=rng)
-
+            print(f"The validation loss is {val_loss:.2f}")
             if cfg.wandb_project:
                 wandb.log({"Validation loss": val_loss}, step=current_tokens)
             # print(f"Sampling from the model at step {step}")
@@ -177,21 +181,27 @@ def train(cfg: Config):
 
 def calculate_loss(model, data, cfg, current_tokens, device, rng=None):
     model.eval()
-    with torch.no_grad():
-        x_val, y_val = get_batch(
-            dataset=data,
-            batch_size=cfg.batch_size,
-            context_length=cfg.context_length,
-            device=device,
-            rng=rng,
-            # starting_pos=0,
-        )  # TODO Run eval on whole validation set isntead of random samples.
-        y_pred = model(x_val)
-        val_loss = cross_entropy(pred=y_pred, targets=y_val)
-
+    accum_loss = 0
+    num_iters = math.ceil(len(data) / (cfg.context_length * cfg.batch_size))
+    #print(f"{num_iters=}")
+    for i in range(num_iters):
+        # print(f"This is {i=}")
+        with torch.no_grad():
+            x_val, y_val = get_batch(
+                dataset=data,
+                batch_size=cfg.batch_size,
+                context_length=cfg.context_length,
+                device=device,
+                rng=None,
+                current_iter=i,
+            )  
+            y_pred = model(x_val)
+            # print(f"We get here for {i}")
+            val_loss = cross_entropy(pred=y_pred, targets=y_val)
+            accum_loss += val_loss
 
     model.train()
-    return val_loss
+    return accum_loss / num_iters
 
 
 def monitor_norms(model, step, y_pred):
@@ -321,26 +331,38 @@ def load_checkpoint(
     return checkpoint["iteration"]
 
 
-def get_batch(dataset: np.array, batch_size: int, context_length: int, device: str, rng=None, starting_pos=None):
+def get_batch(
+    dataset: np.array, batch_size: int, context_length: int, device: str, rng=None, current_iter: int | None = None
+):
     """
     Gets a random or fixed batch of x and y tensors for the model to train on. If a rng is passed, it will be used.
-    If a starting position is passed it will be used.
+    If current_iter is passed the function will return the current_iter batch in the data_set.
     """
+    assert rng is None or current_iter is None  # we should never be passing both a generator and a fixed starting point
 
     if len(dataset) < context_length:
         raise ValueError("Dataset smaller than context length, not possible to create batches")
+    
 
     # Generate random starting indices unless we get passed a generator
     max_start_idx = len(dataset) - context_length - 1
+
     if rng:
-        assert starting_pos == None  # we should never be passing both a generator and a fixed starting point
         starts = rng.integers(0, max_start_idx + 1, size=batch_size)
-    elif starting_pos:
-        raise NotImplementedError()
-        # We want to test for the entire dataset.
-        # We have batches of context_length we then want to make sure our starting point are context_lengt apart, starting from the first
-        starts = np.arange(batch_size) * context_length + starting_pos
-        print(starts)
+    elif current_iter is not None:
+        if len(dataset) < current_iter * context_length * batch_size:
+            raise ValueError("Trying to access a chunk of the dataset that does not exist.")
+        # We want to test for the entire dataset, starting pos.
+        # Eeach batch has "batch_size" number of samples with length = "context_length"
+        # we want to make sure each starting point are context_lengt apart
+        offset = current_iter * context_length * batch_size  # scale offset by previous batches
+        # print(f"{starting_pos = } | {batch_size = } | {context_length = } | {offset = }")
+        starts = np.arange(batch_size) * context_length + offset
+        # print(starts)
+        while (
+            starts[-1] > max_start_idx
+        ):  # When we reach final section, we will decrease the size of the batch to fit remaining data.
+            starts = starts[:-1]
     else:
         starts = np.random.randint(0, max_start_idx + 1, size=batch_size)
 
@@ -550,7 +572,9 @@ class MuonWithAdamW(torch.optim.Optimizer):
                     O_t = newtonschulz5(B_t, steps=5, eps=1e-7)  # Approximate O_t using newton schulz
 
                     a_dim, b_dim = p.data.shape  # Finding the dimensions of the matrix to scale the learning rate
-                    p.data = p.data - lr * 0.2 * O_t * math.sqrt(max(a_dim, b_dim)) - (lr * weight_decay * p.data)  # Update weight tensor in-place and do weight decay. Scaled so we can use optimized parameters for adamw.
+                    p.data = (
+                        p.data - lr * 0.2 * O_t * math.sqrt(max(a_dim, b_dim)) - (lr * weight_decay * p.data)
+                    )  # Update weight tensor in-place and do weight decay. Scaled so we can use optimized parameters for adamw.
                     # p.data -= lr * (O_t + weight_decay * p.data)  # Update weight tensor in-place and do weight decay.
                     # Wt = Wt−1 - ηt(0.2·Ot · sqrt(max(A,B))+λWt−1)
                     state["B_t"] = B_t
