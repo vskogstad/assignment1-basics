@@ -9,7 +9,7 @@ context_length: 256
 theta: 10000
 pre_norm: true
 layer_norm: true
-glu: false
+glu: true
 
 # data loading
 train_dataset_path: "data/training_data/tiny_train.npy"

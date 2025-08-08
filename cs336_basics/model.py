@@ -285,24 +285,46 @@ class Transformer(nn.Module):
 
         return Block  # If not GLU or if no ablations, we will return the regular block.
 
-    def sample(self, tokenizer, prompt: str | None = None, max_tokens: int = 256, temp: int = 1, top_p: int = 0.5):
+    def sample(
+        self,
+        tokenizer,
+        prompt: str | None = None,
+        num_samples: int = 1,
+        max_tokens: int = 256,
+        temp: int = 1,
+        top_p: int = 0.5,
+    ):
         with torch.no_grad():
             sequence = tokenizer.encode(prompt) if prompt else tokenizer.encode("\n")
-            response_length = len(sequence)
             end_of_text_token = tokenizer.encode("<|endoftext|>")[0]
-            sequence = torch.tensor(sequence, dtype=torch.long, device=self.device).unsqueeze(0)
+            sequence = torch.tensor(sequence, dtype=torch.long, device=self.device).unsqueeze(0).repeat(num_samples, 1)
+            print(f"{sequence.shape = }")
 
             # turn sequence into torch tensor
-            while response_length < max_tokens:
+            while len(sequence[-1]) < max_tokens:
                 out = self(sequence)  # forward pass
                 logits = softmax(out, dimension=-1, temp=temp)
-                logits = logits[
-                    :, -1, :
-                ].squeeze()  # Care only about the last word(-1) in the sequence, squeeze out other dimensions
+                logits = logits[:, -1, :]
+
+                # sort each batch while storing orignial indexes
+
+                # compute top p using torch.cumsum()
+                torch.cumsum()
+
+                # create a mask that will cover probabilities that are not in previous list.
+
+                probs = torch.masked_fill(
+                    logits,
+                    mask,
+                )
 
                 # Implementing top P samling. Likely inefficient.
+                next_token = torch.multinomial(
+                    probs,
+                    num_samples=1,
+                )
                 # Top p samples from the n samples that sum to top_p. Unlike top_k which samples from the k highest probs. n's range of possibilities is dynamic, k is fixed.
-                p, indices = torch.sort(logits)
+                """p, indices = torch.sort(logits, dim=-1)
                 i = 0
                 p_accum = 0
                 while p_accum < top_p:
@@ -313,13 +335,11 @@ class Transformer(nn.Module):
                 next_token = (
                     random.choices(population=indices_mod, weights=p_mod, k=1)[-1].unsqueeze(0).unsqueeze(0)
                 )  # adding additional dimensions
-
+                """
                 sequence = torch.cat((sequence, next_token), dim=-1)
-                response_length += 1
-                if next_token == end_of_text_token:
-                    break
 
-        print(tokenizer.decode(sequence.squeeze().tolist()))
+        for i in range(num_samples):
+            print(tokenizer.decode(sequence.squeeze().tolist()) + "\n")
         return
 
 

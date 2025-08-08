@@ -25,7 +25,7 @@ from cs336_basics.utils import resource_accounting, step_law_lr
 # Test 3 different warm-up lengths for Muon
 # Run Muon for full amount of tokens. Run validation loss
 # Upload OWT val and train to hugging face.
-# 
+#
 # Perplexity measurement.
 
 
@@ -33,6 +33,8 @@ def train(cfg: Config):
     """Main training loop
     Initializes a training run based on parameters in config and cmd-line arguments. --config is a required cmd-line argument
     """
+    t_start = t_0 = timeit.default_timer()
+
     # Reproducability.
     # Note that the regular random module is used for sampling responses from the model. Not seeded cause I like seeing new text.
     torch.manual_seed(cfg.seed)
@@ -83,7 +85,6 @@ def train(cfg: Config):
     current_tokens = 0
     chunk_steps = 0
     chunk_loss = 0
-    t_start = t_0 = timeit.default_timer()
 
     # Load from checkpoint
     if cfg.from_checkpoint:
@@ -157,7 +158,7 @@ def train(cfg: Config):
         # if step % 25 == 0:
         # monitor_norms(model, step, y_pred)
         # validation
-        if step % cfg.eval_interval == 0:  # and step != 0:
+        if step % cfg.eval_interval == 0 and step != 0:
             val_loss = calculate_loss(model, val_data, cfg, current_tokens, device, rng=rng)
             print(f"The validation loss is {val_loss:.2f}")
             if cfg.wandb_project:
@@ -166,7 +167,7 @@ def train(cfg: Config):
             # model.sample(tokenizer=tokenizer, prompt="It was a nice day")
 
         # checkpointing
-        if step % cfg.save_interval == 0 and step != 0:
+        if step % cfg.save_interval == 0:  # and step != 0:
             save_checkpoint(
                 model=model,
                 optimizer=optimizer,
@@ -183,7 +184,7 @@ def calculate_loss(model, data, cfg, current_tokens, device, rng=None):
     model.eval()
     accum_loss = 0
     num_iters = math.ceil(len(data) / (cfg.context_length * cfg.batch_size))
-    #print(f"{num_iters=}")
+    # print(f"{num_iters=}")
     for i in range(num_iters):
         # print(f"This is {i=}")
         with torch.no_grad():
@@ -194,7 +195,7 @@ def calculate_loss(model, data, cfg, current_tokens, device, rng=None):
                 device=device,
                 rng=None,
                 current_iter=i,
-            )  
+            )
             y_pred = model(x_val)
             # print(f"We get here for {i}")
             val_loss = cross_entropy(pred=y_pred, targets=y_val)
@@ -320,14 +321,19 @@ def save_checkpoint(
 
 
 def load_checkpoint(
-    src: str | os.PathLike | BinaryIO | IO[bytes], model: torch.nn.Module, optimizer: torch.optim.Optimizer
+    src: str | os.PathLike | BinaryIO | IO[bytes],
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer | None = None,
 ):
     if not os.path.exists(src):
         raise FileNotFoundError(f"Checkpoint not found at {src}")
     checkpoint = torch.load(src)
     model.load_state_dict(checkpoint["model"])
-    optimizer.load_state_dict(checkpoint["optimizer"])
-    print(f"Loading checkpoint from {src}")
+    if optimizer:
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        print(f"Loading checkpoint from {src}")
+    else:
+        print(f"Loading model from {src} for sampling only.")
     return checkpoint["iteration"]
 
 
@@ -342,7 +348,6 @@ def get_batch(
 
     if len(dataset) < context_length:
         raise ValueError("Dataset smaller than context length, not possible to create batches")
-    
 
     # Generate random starting indices unless we get passed a generator
     max_start_idx = len(dataset) - context_length - 1
@@ -359,9 +364,7 @@ def get_batch(
         # print(f"{starting_pos = } | {batch_size = } | {context_length = } | {offset = }")
         starts = np.arange(batch_size) * context_length + offset
         # print(starts)
-        while (
-            starts[-1] > max_start_idx
-        ):  # When we reach final section, we will decrease the size of the batch to fit remaining data.
+        while starts[-1] > max_start_idx:  # On final section, decrease batch_size to fit remaining data.
             starts = starts[:-1]
     else:
         starts = np.random.randint(0, max_start_idx + 1, size=batch_size)
@@ -387,7 +390,7 @@ def softmax(x: torch.Tensor, dimension: int):
 
 def cross_entropy(pred: torch.Tensor, targets: torch.Tensor):
     """Calculates the negative log likelihood"""
-    pred = rearrange(pred, "b ... c -> (b ...) c")  # combine batch and eventula sequence dimension
+    pred = rearrange(pred, "b ... c -> (b ...) c")  # combine batch sequence dimension if present
     targets = rearrange(targets, "b ... -> (b ...)")
     batch_size = pred.size(0)
     max_pred = torch.max(pred, dim=1, keepdim=True).values
@@ -635,6 +638,33 @@ def clip_gradient(parameters, max_l2_norm: float):
             param.grad *= max_l2_norm / (l2_norm + eps)
 
 
+def sample_from_model_checkpoint(
+    model_path,
+    cfg: Config,
+    num_samples: int,
+    prompt: str | None = None,
+    max_tokens: int = 256,
+    temp: int = 1,
+    top_p: int = 0.5,
+):
+    """Opens the model path and returns n samples from the model"""
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    cfg.dtype = torch.bfloat16 if cfg.dtype == "bfloat16" else torch.float32
+
+    tokenizer = Tokenizer.from_files(
+        vocab_filepath=cfg.tokenizer_vocab_path,
+        merges_filepath=cfg.tokenizer_merges_path,
+    )
+    model = get_model(cfg, device) if device == torch.device("cpu") else torch.compile(get_model(cfg, device))
+
+    load_checkpoint(model_path, model)
+
+    if num_samples > 128:
+        print(f"Maximum 128 samples")
+        num_samples = 128
+    model.sample(tokenizer, prompt, num_samples, max_tokens, temp, top_p)
+
+
 if __name__ == "__main__":
     # Parse command line arguments
     parser = get_parser()
@@ -644,6 +674,15 @@ if __name__ == "__main__":
     config = Config.from_yaml(args.config)
     config.update_from_args(args)
 
+    sample_from_model_checkpoint(
+        model_path=r"cs336_basics\configs\experiments\checkpoints\base_cpu_0.pth",
+        cfg=config,
+        num_samples=2,
+        prompt="Once upon a time",
+    )
+    import sys
+
+    sys.exit()
     # Save final config to experiment directory
     os.makedirs(config.output_dir, exist_ok=True)
     config.save(os.path.join(config.output_dir, f"{config.experiment_name}_config.yaml"))
