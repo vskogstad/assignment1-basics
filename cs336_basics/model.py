@@ -8,19 +8,22 @@ from torch import nn as nn
 
 class Linear(nn.Module):
     def __init__(
-        self, in_features: int, out_features: int, device: torch.device | None = None, dtype: torch.dtype | None = None
+        self, in_features: int, out_features: int, device: torch.device | None = None, dtype: torch.dtype | None = None, set_zero: bool = False
     ):
         super().__init__()
         std = math.sqrt(2 / (in_features + out_features))
-        self.W = nn.Parameter(
-            nn.init.trunc_normal_(
-                tensor=torch.zeros(size=(out_features, in_features), device=device),
-                mean=0,
-                std=std,
-                a=-3 * std,
-                b=3 * std,
+        if set_zero:
+            self.W = nn.Parameter(torch.zeros(size=(out_features, in_features), device=device))
+        else:
+            self.W = nn.Parameter(
+                nn.init.trunc_normal_(
+                    tensor=torch.zeros(size=(out_features, in_features), device=device),
+                    mean=0,
+                    std=std,
+                    a=-3 * std,
+                    b=3 * std,
+                )
             )
-        )
 
     def forward(self, x: torch.Tensor):
         x = einsum(x, self.W, "... d_in, d_out d_in -> ... d_out")
@@ -84,44 +87,20 @@ class SWIGLU(nn.Module):
     def __init__(self, d_model: int, d_ff: int, device: torch.device | None = None, dtype: torch.dtype | None = None):
         super().__init__()
         std = math.sqrt(2 / (d_model + d_ff))
-        self.w1 = nn.Parameter(
-            nn.init.trunc_normal_(
-                tensor=torch.zeros(size=(d_ff, d_model), device=device, dtype=dtype),
-                mean=0,
-                std=std,
-                a=-3 * std,
-                b=3 * std,
-            )
-        )
-        self.w2 = nn.Parameter(
-            nn.init.trunc_normal_(
-                tensor=torch.zeros(size=(d_model, d_ff), device=device, dtype=dtype),
-                mean=0,
-                std=std,
-                a=-3 * std,
-                b=3 * std,
-            )
-        )
-        self.w3 = nn.Parameter(
-            nn.init.trunc_normal_(
-                tensor=torch.zeros(size=(d_ff, d_model), device=device, dtype=dtype),
-                mean=0,
-                std=std,
-                a=-3 * std,
-                b=3 * std,
-            )
-        )
+        self.w1 = Linear(in_features=d_model, out_features=d_ff, device=device, dtype=dtype)
+        self.w2 = Linear(in_features=d_ff, out_features=d_model, device=device, dtype=dtype, set_zero=True)
+        self.w3 = Linear(in_features=d_model, out_features=d_ff, device=device, dtype=dtype)
         self.silu = SILU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # SwiGLU(x) = W2(SiLU(xW1) ⊙ xW3)
-        x1 = einsum(self.w1, x, "d_ff d_model, b s d_model -> b s d_ff")
-        x3 = einsum(self.w3, x, "d_ff d_model, b s d_model -> b s d_ff")
+        x1 = self.w1(x)
+        x3 = self.w3(x)
 
         # cross product (GLU)
         hidden = einsum(self.silu(x1), x3, "b s d_ff, b s d_ff-> b s d_ff")
         # project by to normal dimensions
-        x = einsum(self.w2, hidden, "d_model d_ff, b s d_ff -> b s d_model")
+        x = self.w2(hidden)
         return x
 
 
@@ -263,7 +242,7 @@ class Transformer(nn.Module):
             ]
         )
         self.rmsn_f = RMSNorm(d_model=d_model, eps=1e-5, device=device, dtype=dtype)
-        self.lm_head = Linear(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype)
+        self.lm_head = Linear(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype, set_zero=True)
         self.device = device
 
     def forward(self, x: torch.Tensor):
@@ -347,7 +326,7 @@ class RoPE(nn.Module):
     def __init__(self, theta: float, d_k: int, max_sequence_length: int, device: torch.device | None = None):
         """
         Interleaved RoPE implementation - treats consecutive pairs as complex numbers
-        This matches the mathematical approach expected by tests but is utterly incomprehensible for me.
+        This matches the mathematical approach expected by tests.
         """
         super().__init__()
         self.base = theta
@@ -373,7 +352,7 @@ class RoPE(nn.Module):
 
     def rotate_half(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Except for comments, this is all Claude/Meta unfortuneately. I had implemeted the transformer-version of Neox-RoPE,
+        Except for comments, this is all rewriting Meta's implementation with help from Claude. I had implemeted the transformer-version of Neox-RoPE,
         but that fails the test.
 
         Interleaved rotation: (-x2, x1, -x4, x3, -x6, x5, ...)
@@ -427,10 +406,10 @@ class MultiHeadAttention(nn.Module):
         assert d_model % num_heads == 0
         self.d_k = self.d_v = int(d_model / num_heads)
         # head_size = int(d_model/num_heads)
-        self.Wq = Linear(num_heads * self.d_k, d_model, device=device, dtype=dtype)
+        self.Wq = Linear(num_heads * self.d_k, d_model, device=device, dtype=dtype, set_zero=True)
         self.Wk = Linear(num_heads * self.d_k, d_model, device=device, dtype=dtype)
         self.Wv = Linear(num_heads * self.d_v, d_model, device=device, dtype=dtype)
-        self.Wo = Linear(d_model, num_heads * self.d_v, device=device, dtype=dtype)
+        self.Wo = Linear(d_model, num_heads * self.d_v, device=device, dtype=dtype, set_zero=True)
         # self.heads = [Head(head_size=head_size, dim=d_k for _ in range(num_heads)]
         # self.register_buffer(name="tril", tensor=torch.tril(torch.ones((d_model,d_model))))
         if max_sequence_length is None:

@@ -18,10 +18,10 @@ tokenizer_vocab_path: "data/tokenizer_data/vocab_tiny.pkl"
 tokenizer_merges_path: "data/tokenizer_data/merges_tiny.pkl"
 
 # Training configuration
-dtype: float32 # bfloat16
+dtype: bfloat16
 batch_size: 128
 min_learning_rate: 1.0e-5
-max_learning_rate: 0.005
+max_learning_rate: 0.012
 weight_decay: 0.1
 warmup_steps: 400
 total_steps: 5001
@@ -36,9 +36,9 @@ scheduler: "cosine"
 # Experiment configuration
 experiment_name: "step_law_muon"
 seed: 42
-log_interval: 1
-eval_interval: 8000
-save_interval: 2500
+log_interval: 10
+eval_interval: 100
+save_interval: 5000
 output_dir: "cs336_basics/configs/experiments"
-wandb_project: A100-testruns
+wandb_project: H100-testruns
 from_checkpoint: null #"cs336_basics/checkpoints/baseline_2000.pth"

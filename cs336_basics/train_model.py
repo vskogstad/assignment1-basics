@@ -27,7 +27,17 @@ from cs336_basics.utils import resource_accounting, step_law_lr
 # Upload OWT val and train to hugging face.
 #
 # Perplexity measurement.
+"""
+his improvement in training speed has been brought about by the following techniques:
 
+    Modernized architecture: Rotary embeddings, QK-Norm, and ReLU²
+    x The Muon optimizer [writeup] [repo]
+    Untie head from embedding, use FP8 matmul for head, and softcap logits (the latter following Gemma 2)
+    x Initialization of projection and classification layers to zero (muP-like)
+    Skip connections from embedding to every block as well as between blocks in U-net pattern
+    Extra embeddings which are mixed into the values in attention layers (inspired by Zhou et al. 2024)
+    FlexAttention with long-short sliding window attention pattern (inspired by Gemma 2) and window size warmup
+"""
 
 def train(cfg: Config):
     """Main training loop
@@ -49,7 +59,7 @@ def train(cfg: Config):
         if cfg.dtype == "bfloat16":
             max_flops = 989e12  # BF16 Tensor Core without sparsity.
         else:
-            max_flops = 156e12  # 989e12 / 2  # TF32 Tensor Core without sparsity.
+            max_flops = 989e12 / 2  # TF32 Tensor Core without sparsity.
     else:
         max_flops = float("inf")
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -123,11 +133,11 @@ def train(cfg: Config):
         optimizer.step()
 
         # Logging
-        chunk_loss += loss.item()
+        chunk_loss += loss.detach()
         chunk_steps += 1
         current_tokens += cfg.batch_size * cfg.context_length
         if step % cfg.log_interval == 0:
-            loss_accumulated = chunk_loss / chunk_steps
+            loss_accumulated = chunk_loss.sum().item() / chunk_steps
             if device == torch.device("cuda"):
                 torch.cuda.synchronize()
             t_1 = timeit.default_timer()
@@ -135,7 +145,7 @@ def train(cfg: Config):
             t_0 = timeit.default_timer()
 
             token_per_s = chunk_steps * cfg.batch_size * cfg.context_length / (chunk_time)
-            mfu = (flops_per_batch / (chunk_time)) / max_flops if max_flops != float("inf") else None
+            mfu = (flops_per_batch * cfg.log_interval / (chunk_time)) / max_flops if max_flops != float("inf") else None
             print(
                 f"step = {step} | Loss = {loss_accumulated:.3f} | s {chunk_time = :.2f} | tok/s = {token_per_s:,.1f} | lr = {new_lr:.5f} | MFU = {mfu}"
             )
@@ -167,7 +177,7 @@ def train(cfg: Config):
             # model.sample(tokenizer=tokenizer, prompt="It was a nice day")
 
         # checkpointing
-        if step % cfg.save_interval == 0:  # and step != 0:
+        if step % cfg.save_interval == 0 and step != 0:
             save_checkpoint(
                 model=model,
                 optimizer=optimizer,
@@ -572,7 +582,7 @@ class MuonWithAdamW(torch.optim.Optimizer):
 
                     grad = p.grad.data  # Get the gradient of loss with respect to p.
                     B_t = momentum * B_t + (1 - momentum) * grad
-                    O_t = newtonschulz5(B_t, steps=5, eps=1e-7)  # Approximate O_t using newton schulz
+                    O_t = newtonschulz5(momentum * B_t + (1 - momentum) * grad, steps=5, eps=1e-7)  # Approximate O_t using newton schulz
 
                     a_dim, b_dim = p.data.shape  # Finding the dimensions of the matrix to scale the learning rate
                     p.data = (
@@ -674,15 +684,7 @@ if __name__ == "__main__":
     config = Config.from_yaml(args.config)
     config.update_from_args(args)
 
-    sample_from_model_checkpoint(
-        model_path=r"cs336_basics\configs\experiments\checkpoints\base_cpu_0.pth",
-        cfg=config,
-        num_samples=2,
-        prompt="Once upon a time",
-    )
-    import sys
 
-    sys.exit()
     # Save final config to experiment directory
     os.makedirs(config.output_dir, exist_ok=True)
     config.save(os.path.join(config.output_dir, f"{config.experiment_name}_config.yaml"))
@@ -691,3 +693,13 @@ if __name__ == "__main__":
     train(cfg=config)
 
     # report results
+
+    import sys
+
+    sys.exit()
+    sample_from_model_checkpoint(
+        model_path=r"cs336_basics\configs\experiments\checkpoints\base_cpu_0.pth",
+        cfg=config,
+        num_samples=2,
+        prompt="Once upon a time",
+    )
