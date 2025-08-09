@@ -571,7 +571,7 @@ class MuonWithAdamW(torch.optim.Optimizer):
                     B_t = state.get("B_t", torch.zeros_like(p.data))
 
                     grad = p.grad.data  # Get the gradient of loss with respect to p.
-                    B_t = momentum * B_t + grad
+                    B_t = momentum * B_t + (1 - momentum) * grad
                     O_t = newtonschulz5(B_t, steps=5, eps=1e-7)  # Approximate O_t using newton schulz
 
                     a_dim, b_dim = p.data.shape  # Finding the dimensions of the matrix to scale the learning rate
