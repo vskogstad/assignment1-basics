@@ -1,6 +1,6 @@
 #model configuration
 model_name: "transformer"
-vocab_size: 10000
+vocab_size: 30720 #30720 / 32768
 num_layers: 4
 num_heads: 16
 d_model: 512
@@ -12,10 +12,10 @@ layer_norm: true
 glu: true
 
 # data loading
-train_dataset_path: "data/training_data/tiny_train.npy"
-val_dataset_path: "data/training_data/tiny_valid.npy"
-tokenizer_vocab_path: "data/tokenizer_data/vocab_tiny.pkl"
-tokenizer_merges_path: "data/tokenizer_data/merges_tiny.pkl"
+train_dataset_path: "data/training_data/owt_train.npy"
+val_dataset_path: "data/training_data/owt_valid.npy"
+tokenizer_vocab_path: "data/tokenizer_data/vocab_owt_train.pkl"
+tokenizer_merges_path: "data/tokenizer_data/merges_owt_train.pkl"
 
 # Training configuration
 dtype: float32 # bfloat16
