@@ -2,14 +2,14 @@ batch_size: 128
 betas:
 - 0.9
 - 0.95
-context_length: 256
-cosine_cycle_steps: 10001
-d_ff: 1344
-d_model: 512
+context_length: 512
+cosine_cycle_steps: 5001
+d_ff: 2688
+d_model: 1024
 dtype: float32
 eps: 1.0e-08
 eval_interval: 5000
-experiment_name: step_law_muon
+experiment_name: scaling up
 from_checkpoint: null
 glu: true
 grad_clip_norm: 1.0
@@ -30,10 +30,10 @@ seed: 42
 theta: 10000
 tokenizer_merges_path: data/tokenizer_data/merges_owt_train.pkl
 tokenizer_vocab_path: data/tokenizer_data/vocab_owt_train.pkl
-total_steps: 10001
+total_steps: 5001
 train_dataset_path: data/training_data/owt_train.npy
 val_dataset_path: data/training_data/owt_valid.npy
 vocab_size: 32000
-wandb_project: H100-testruns
+wandb_project: null
 warmup_steps: 600
 weight_decay: 0.1

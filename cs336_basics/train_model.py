@@ -71,7 +71,7 @@ def train(cfg: Config):
     flops_per_batch, non_embedding_params = resource_accounting(cfg)  # Print info about the current run to the log
 
     # Load model, optimizer and scheduler
-    model = get_model(cfg, device) if device == torch.device("cpu") else torch.compile(get_model(cfg, device))
+    model = get_model(cfg, device) if device == torch.device("cpu") else torch.compile(get_model(cfg, device)) #, fullgraph=True)
     optimizer = get_optimizer(cfg=cfg, model=model)
     assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
 
@@ -114,9 +114,9 @@ def train(cfg: Config):
         loss = cross_entropy(pred=y_pred, targets=y)
 
         # Trying to search for nan-source using regular cross entropy
-        # loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
+        #loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
         loss.backward()
-
+    
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
 
         if cfg.scheduler == "cosine":
@@ -690,7 +690,7 @@ if __name__ == "__main__":
     config.save(os.path.join(config.output_dir, f"{config.experiment_name}_config.yaml"))
 
     # train the model
-    train(cfg=config)
+    a = torch.compile(train(cfg=config), fullgraph=True)
 
     # report results
 

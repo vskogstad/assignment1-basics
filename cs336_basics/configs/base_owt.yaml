@@ -1,11 +1,11 @@
 #model configuration
 model_name: "transformer"
-vocab_size: 30720 #30720 / 32768
+vocab_size: 32000 # 32768
 num_layers: 4
 num_heads: 16
-d_model: 512
-d_ff: 1344
-context_length: 256
+d_model: 1024
+d_ff: 2688
+context_length: 512
 theta: 10000
 pre_norm: true
 layer_norm: true
@@ -24,8 +24,8 @@ min_learning_rate: 1.0e-5
 max_learning_rate: 0.012
 weight_decay: 0.1
 warmup_steps: 600
-total_steps: 10001
-cosine_cycle_steps: 10001
+total_steps: 5001
+cosine_cycle_steps: 5001
 betas: [0.9, 0.95]
 eps: 1.0e-8
 muon_momentum: 0.95
@@ -34,11 +34,11 @@ optimizer: "muon"
 scheduler: "cosine"
 
 # Experiment configuration
-experiment_name: "step_law_muon"
+experiment_name: "scaling up"
 seed: 42
 log_interval: 10
-eval_interval: 100
+eval_interval: 5000
 save_interval: 5000
 output_dir: "cs336_basics/configs/experiments"
-wandb_project: H100-testruns
+wandb_project: null #H100-OWT-testruns
 from_checkpoint: null #"cs336_basics/checkpoints/baseline_2000.pth"
