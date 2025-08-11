@@ -8,7 +8,12 @@ from torch import nn as nn
 
 class Linear(nn.Module):
     def __init__(
-        self, in_features: int, out_features: int, device: torch.device | None = None, dtype: torch.dtype | None = None, set_zero: bool = False
+        self,
+        in_features: int,
+        out_features: int,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+        set_zero: bool = False,
     ):
         super().__init__()
         std = math.sqrt(2 / (in_features + out_features))
@@ -110,6 +115,7 @@ class Block(nn.Module):
         d_model: int,
         num_heads: int,
         d_ff: int,
+        depth: int,
         max_sequence_length: int | None = None,
         theta: int | None = None,
         device: torch.device | None = None,
@@ -126,6 +132,7 @@ class Block(nn.Module):
             dtype=dtype,
         )
         self.rmsn1 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
+        self.scaling = depth**-0.5
         if glu:
             self.ffn = SWIGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
         else:
@@ -134,10 +141,10 @@ class Block(nn.Module):
 
     def forward(self, x: torch.Tensor):
         """Pre norm"""
-        x = x + 1 * self.mha(
-            self.rmsn1(x),
-        )  # Attention with prenorm
-        x = x + 1 * self.ffn(self.rmsn2(x))  # SILU or SWIGLU FFN with prenorm
+        # Attention with prenorm and lns
+        x = x + 1 * self.mha(self.scaling * self.rmsn1(x))
+        # SILU or SWIGLU FFN with prenorm and lns
+        x = x + self.ffn(self.scaling * self.rmsn2(x))
         return x
 
 
@@ -232,13 +239,14 @@ class Transformer(nn.Module):
                     d_model=d_model,
                     num_heads=num_heads,
                     d_ff=d_ff,
+                    depth=i + 1,
                     max_sequence_length=context_length,
                     theta=theta,
                     device=device,
                     dtype=dtype,
                     glu=glu,
                 )
-                for _ in range(num_layers)
+                for i in range(num_layers)
             ]
         )
         self.rmsn_f = RMSNorm(d_model=d_model, eps=1e-5, device=device, dtype=dtype)
@@ -434,7 +442,7 @@ class MultiHeadAttention(nn.Module):
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
 
-        #mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril) 
+        # mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
         mha = scaled_dot_product_attention(Q, K, V, mask=self.tril)
         # rearrenge back into original embedding dimension
         mha = rearrange(mha, "b head s d_v -> b s (head d_v)")

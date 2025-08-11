@@ -93,10 +93,10 @@ def resource_accounting(config):
 
     return flops_per_batch, non_embedding_params  # FLOPs for forward and backward pass per batch
 
-def step_law_lr(len_data, non_embedding_params):
+def step_law_lr(len_data, non_embedding_params, context_length):
     opti_batch = 0.58 * len_data ** 0.571
     opti_lr = 1.79 * non_embedding_params **(-0.713) * len_data **0.307
-    print(f"Dataset is {len_data:,} tokens. \nOptimal batch size = {opti_batch}. \nOptimal lr = {opti_lr:.4f}")
+    print(f"Dataset is {len_data:,} tokens. \nOptimal batch size = {opti_batch} tokens or {opti_batch/context_length} sequence_batches. \nOptimal lr = {opti_lr:.4f}")
 
 if __name__ == "__main__":
     gpt2xl_cfg = ResourceConfig(vocab_size=50257, context_length=1024, num_layers=48, d_model=1600, num_heads=25, d_ff=6400)

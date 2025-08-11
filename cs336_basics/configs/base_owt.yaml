@@ -1,7 +1,7 @@
 #model configuration
 model_name: "transformer"
 vocab_size: 32000 # 32768
-num_layers: 4
+num_layers: 8
 num_heads: 16
 d_model: 1024
 d_ff: 2688
@@ -21,7 +21,7 @@ tokenizer_merges_path: "data/tokenizer_data/merges_owt_train.pkl"
 dtype: float32 # bfloat16
 batch_size: 128
 min_learning_rate: 1.0e-5
-max_learning_rate: 0.012
+max_learning_rate: 0.0015
 weight_decay: 0.1
 warmup_steps: 600
 total_steps: 5001

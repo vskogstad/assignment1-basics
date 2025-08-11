@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 from einops import einsum, rearrange
 from torch import nn as nn
-from torch.profiler import profile, ProfilerActivity, record_function
+from torch.profiler import ProfilerActivity, profile, record_function
 
 import wandb
 from cs336_basics.config import Config, get_parser
@@ -21,12 +21,10 @@ from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.utils import resource_accounting, step_law_lr
 
 # Test the optimization with pytorch matrix-sizes.
-# Test muon with nesterov momentum
-# Test 3 different learning rates for Muon
-# Test 3 different warm-up lengths for Muon
-# Run Muon for full amount of tokens. Run validation loss
-# Upload OWT val and train to hugging face.
-#
+# Test scaling ln with depth     https://arxiv.org/pdf/2502.05795
+# Test corrected optimal batch-size and learning rate.
+# Grouped query attention.
+# KV-cache.
 # Perplexity measurement.
 """
 his improvement in training speed has been brought about by the following techniques:
@@ -39,6 +37,7 @@ his improvement in training speed has been brought about by the following techni
     Extra embeddings which are mixed into the values in attention layers (inspired by Zhou et al. 2024)
     FlexAttention with long-short sliding window attention pattern (inspired by Gemma 2) and window size warmup
 """
+
 
 def train(cfg: Config):
     """Main training loop
@@ -70,9 +69,17 @@ def train(cfg: Config):
     print(f"Using {device} and {cfg.dtype}")
     print(f"Processing {cfg.batch_size * cfg.context_length * cfg.total_steps:,} tokens")
     flops_per_batch, non_embedding_params = resource_accounting(cfg)  # Print info about the current run to the log
+    step_law_lr(
+        len_data=140_000 * 5200, non_embedding_params=non_embedding_params, context_length=cfg.context_length
+    )  # For our specific task use fixed len_data
+    # step_law_lr(len_data=len(train_data), non_embedding_params =non_embedding_params)
+    import sys
 
+    sys.exit()
     # Load model, optimizer and scheduler
-    model = get_model(cfg, device) if device == torch.device("cpu") else torch.compile(get_model(cfg, device)) #, fullgraph=True)
+    model = (
+        get_model(cfg, device) if device == torch.device("cpu") else torch.compile(get_model(cfg, device))
+    )  # , fullgraph=True)
     optimizer = get_optimizer(cfg=cfg, model=model)
     assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
 
@@ -83,11 +90,8 @@ def train(cfg: Config):
         vocab_filepath=cfg.tokenizer_vocab_path,
         merges_filepath=cfg.tokenizer_merges_path,
     )
-    step_law_lr(
-        len_data=327_680_000, non_embedding_params=non_embedding_params
-    )  # For our specific task use fixed len_data
-    # step_law_lr(len_data=len(train_data), non_embedding_params =non_embedding_params)
 
+    sys.exit()
     # Initialize logging
     if cfg.wandb_project:
         wandb.login()
@@ -113,12 +117,12 @@ def train(cfg: Config):
         optimizer.zero_grad()
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             y_pred = model(x)
-            
+
             loss = cross_entropy(pred=y_pred, targets=y)
         # Trying to search for nan-source using regular cross entropy
-        #loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
+        # loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
         loss.backward()
-    
+
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
 
         if cfg.scheduler == "cosine":
@@ -687,25 +691,23 @@ if __name__ == "__main__":
     config = Config.from_yaml(args.config)
     config.update_from_args(args)
 
-
     # Save final config to experiment directory
     os.makedirs(config.output_dir, exist_ok=True)
     config.save(os.path.join(config.output_dir, f"{config.experiment_name}_config.yaml"))
 
-
-    a = torch.compile(train(cfg=config)) #, fullgraph=True)
+    a = torch.compile(train(cfg=config))  # , fullgraph=True)
     import sys
 
     sys.exit()
     # train the model
     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
         with record_function("model_inference"):
-           pass
+            pass
 
     # report results
     print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
     print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
-    
+
     sample_from_model_checkpoint(
         model_path=r"cs336_basics\configs\experiments\checkpoints\base_cpu_0.pth",
         cfg=config,
