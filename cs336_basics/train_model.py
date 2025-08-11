@@ -72,10 +72,8 @@ def train(cfg: Config):
     step_law_lr(
         len_data=140_000 * 5200, non_embedding_params=non_embedding_params, context_length=cfg.context_length
     )  # For our specific task use fixed len_data
-    # step_law_lr(len_data=len(train_data), non_embedding_params =non_embedding_params)
-    import sys
 
-    sys.exit()
+
     # Load model, optimizer and scheduler
     model = (
         get_model(cfg, device) if device == torch.device("cpu") else torch.compile(get_model(cfg, device))
@@ -91,7 +89,7 @@ def train(cfg: Config):
         merges_filepath=cfg.tokenizer_merges_path,
     )
 
-    sys.exit()
+
     # Initialize logging
     if cfg.wandb_project:
         wandb.login()
@@ -119,8 +117,8 @@ def train(cfg: Config):
             y_pred = model(x)
 
             loss = cross_entropy(pred=y_pred, targets=y)
-        # Trying to search for nan-source using regular cross entropy
-        # loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
+            # Trying to search for nan-source using regular cross entropy
+            # loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
         loss.backward()
 
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
