@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 from einops import einsum, rearrange
 from torch import nn as nn
+from torch.profiler import profile, ProfilerActivity, record_function
 
 import wandb
 from cs336_basics.config import Config, get_parser
@@ -110,9 +111,10 @@ def train(cfg: Config):
         )
 
         optimizer.zero_grad()
-        y_pred = model(x)
-        loss = cross_entropy(pred=y_pred, targets=y)
-
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            y_pred = model(x)
+            
+            loss = cross_entropy(pred=y_pred, targets=y)
         # Trying to search for nan-source using regular cross entropy
         #loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
         loss.backward()
@@ -582,7 +584,8 @@ class MuonWithAdamW(torch.optim.Optimizer):
 
                     grad = p.grad.data  # Get the gradient of loss with respect to p.
                     B_t = momentum * B_t + (1 - momentum) * grad
-                    O_t = newtonschulz5(momentum * B_t + (1 - momentum) * grad, steps=5, eps=1e-7)  # Approximate O_t using newton schulz
+                    update = momentum * B_t + (1 - momentum) * grad
+                    O_t = newtonschulz5(update.bfloat16(), steps=5, eps=1e-7)  # Approximate O_t using newton schulz
 
                     a_dim, b_dim = p.data.shape  # Finding the dimensions of the matrix to scale the learning rate
                     p.data = (
@@ -689,14 +692,20 @@ if __name__ == "__main__":
     os.makedirs(config.output_dir, exist_ok=True)
     config.save(os.path.join(config.output_dir, f"{config.experiment_name}_config.yaml"))
 
-    # train the model
-    a = torch.compile(train(cfg=config), fullgraph=True)
 
-    # report results
-
+    a = torch.compile(train(cfg=config)) #, fullgraph=True)
     import sys
 
     sys.exit()
+    # train the model
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
+        with record_function("model_inference"):
+           pass
+
+    # report results
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+    print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+    
     sample_from_model_checkpoint(
         model_path=r"cs336_basics\configs\experiments\checkpoints\base_cpu_0.pth",
         cfg=config,
