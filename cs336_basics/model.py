@@ -281,36 +281,48 @@ class Transformer(nn.Module):
         temp: int = 1,
         top_p: int = 0.5,
     ):
+        """
+        Sampling using Top-p.
+
+        Top p samples from the n most probable responses which sum is >= top_p. 
+        Unlike top_k which always samples from the k highest probs. n's range of possibilities is dynamic, while k is fixed.
+        """
         with torch.no_grad():
             sequence = tokenizer.encode(prompt) if prompt else tokenizer.encode("\n")
-            end_of_text_token = tokenizer.encode("<|endoftext|>")[0]
+            # end_of_text_token = tokenizer.encode("<|endoftext|>")[0]
             sequence = torch.tensor(sequence, dtype=torch.long, device=self.device).unsqueeze(0).repeat(num_samples, 1)
-            print(f"{sequence.shape = }")
+            # print(f"{sequence.shape = }")
 
             # turn sequence into torch tensor
-            while len(sequence[-1]) < max_tokens:
+            while sequence.shape[-1] < max_tokens:
                 out = self(sequence)  # forward pass
                 logits = softmax(out, dimension=-1, temp=temp)
                 logits = logits[:, -1, :]
 
                 # sort each batch while storing orignial indexes
+                sorted, indices = torch.sort(logits, -1, descending=True)
+                # print(sorted, indices)
+                
+                # torch.cumsum() accumualtes the numbers, find those which values < p
+                cum_sum_probs = torch.cumsum(sorted, -1)
+                top_probs = cum_sum_probs < top_p # this is off-by-one to our target
+                # print(f"{torch.ones((num_samples, 1)).shape=} | {top_probs[:,:-1].shape}")
+                # Add an initial True to our tensors to correct for off-by-one
+                top_probs = torch.cat((torch.ones((num_samples, 1), dtype=bool, device=self.device), top_probs[:,:-1]), dim=-1)
+                # print(top_probs)
 
-                # compute top p using torch.cumsum()
-                torch.cumsum()
+                # mask out probabilities that are not in top_p
+                sorted[~top_probs] = 0
 
-                # create a mask that will cover probabilities that are not in previous list.
 
-                probs = torch.masked_fill(
-                    logits,
-                    mask,
-                )
-
-                # Implementing top P samling. Likely inefficient.
-                next_token = torch.multinomial(
-                    probs,
+                # Sample 
+                sampled_indices = torch.multinomial(
+                    sorted,
                     num_samples=1,
                 )
-                # Top p samples from the n samples that sum to top_p. Unlike top_k which samples from the k highest probs. n's range of possibilities is dynamic, k is fixed.
+
+                next_token = torch.gather(indices, dim=-1, index=sampled_indices)
+                
                 """p, indices = torch.sort(logits, dim=-1)
                 i = 0
                 p_accum = 0
@@ -324,9 +336,12 @@ class Transformer(nn.Module):
                 )  # adding additional dimensions
                 """
                 sequence = torch.cat((sequence, next_token), dim=-1)
+                print(sequence)
+                import sys;
+                sys.exit()
 
         for i in range(num_samples):
-            print(tokenizer.decode(sequence.squeeze().tolist()) + "\n")
+            print(tokenizer.decode(sequence[i, :].squeeze().tolist()) + "\n")
         return
 
 
@@ -360,7 +375,7 @@ class RoPE(nn.Module):
 
     def rotate_half(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Except for comments, this is all rewriting Meta's implementation with help from Claude. I had implemeted the transformer-version of Neox-RoPE,
+        Except for comments, this is basically rewriting Meta's implementation with help from Claude. I had implemeted the transformer-version of Neox-RoPE,
         but that fails the test.
 
         Interleaved rotation: (-x2, x1, -x4, x3, -x6, x5, ...)
