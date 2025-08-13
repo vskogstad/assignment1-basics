@@ -23,7 +23,7 @@ from cs336_basics.utils import resource_accounting, step_law_lr
 # Test the optimization with pytorch matrix-sizes.
 # Test scaling ln with depth     https://arxiv.org/pdf/2502.05795
 # Test corrected optimal batch-size and learning rate.
-# Grouped query attention.
+# x  Grouped query attention.
 # KV-cache.
 # Perplexity measurement.
 """
@@ -83,6 +83,7 @@ def train(cfg: Config):
 
     # Data loading
     train_data = np.load(cfg.train_dataset_path, mmap_mode="r")
+    print(f"The training dataset contains {len(train_data):,} tokens")
     val_data = np.load(cfg.val_dataset_path, mmap_mode="r")
     tokenizer = Tokenizer.from_files(
         vocab_filepath=cfg.tokenizer_vocab_path,

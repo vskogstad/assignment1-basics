@@ -123,10 +123,11 @@ class Block(nn.Module):
         glu: bool = True,
     ):
         super().__init__()
-        self.mha = MultiHeadAttention(
+        self.mha = GroupedQueryAttention(
             d_model=d_model,
             num_heads=num_heads,
             max_sequence_length=max_sequence_length,
+            num_kv_groups=int(num_heads / 4),
             theta=theta,
             device=device,
             dtype=dtype,
@@ -441,7 +442,7 @@ class MultiHeadAttention(nn.Module):
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
 
-        #mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
+        # mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
         mha = scaled_dot_product_attention(Q, K, V, mask=self.tril)
         # rearrenge back into original embedding dimension
         mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
@@ -450,10 +451,19 @@ class MultiHeadAttention(nn.Module):
 
 
 class GroupedQueryAttention(nn.Module):
+    """
+    K and V are group the attention heads into larger groups.
+
+    Q shape: [batch, num_heads, seq_len, d_k]
+    K shape: [batch, num_kv_groups, seq_len, d_k]
+    V shape: [batch, num_kv_groups, seq_len, d_v]
+    """
+
     def __init__(
         self,
         d_model: int,
         num_heads: int,
+        num_kv_groups: int,
         max_sequence_length: int | None = None,
         theta: float | None = None,
         dtype: torch.dtype | None = None,
@@ -463,12 +473,16 @@ class GroupedQueryAttention(nn.Module):
         self.num_heads = num_heads
         assert d_model % num_heads == 0
         self.d_k = self.d_v = int(d_model / num_heads)
-        # head_size = int(d_model/num_heads)
-        self.Wq = Linear(num_heads * self.d_k, d_model, device=device, dtype=dtype, set_zero=True)
-        self.Wk = Linear(num_heads * self.d_k, d_model, device=device, dtype=dtype)
-        self.Wv = Linear(num_heads * self.d_v, d_model, device=device, dtype=dtype)
-        self.Wo = Linear(d_model, num_heads * self.d_v, device=device, dtype=dtype, set_zero=True)
-        # self.heads = [Head(head_size=head_size, dim=d_k for _ in range(num_heads)]
+
+        self.num_kv_groups = num_kv_groups
+        self.group_size = num_heads / num_kv_groups  # each group consists of group_size number of heads
+
+        # print(f"{type(num_kv_groups * self.d_k)=} | {type(d_model) =}")
+        self.Wq = Linear(d_model, num_heads * self.d_k, device=device, dtype=dtype, set_zero=True)
+        self.Wk = Linear(d_model, num_kv_groups * self.d_k, device=device, dtype=dtype)
+        self.Wv = Linear(d_model, num_kv_groups * self.d_v, device=device, dtype=dtype)
+        self.Wo = Linear(num_heads * self.d_v, d_model, device=device, dtype=dtype, set_zero=True)
+
         # self.register_buffer(name="tril", tensor=torch.tril(torch.ones((d_model,d_model))))
         if max_sequence_length is None:
             max_sequence_length = (
@@ -483,8 +497,12 @@ class GroupedQueryAttention(nn.Module):
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
         # We split the embedding dimension into an additional batch dimension (heads)
         Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
-        K = rearrange(self.Wk(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
-        V = rearrange(self.Wv(x), "b s (head d_v) -> b head s d_v", d_v=self.d_v)
+        K = rearrange(
+            self.Wk(x),
+            "b s (group d_k) -> b group s d_k",
+            d_k=self.d_k,
+        )
+        V = rearrange(self.Wv(x), "b s (group d_v) -> b group s d_v", d_v=self.d_v)
 
         if self.rope != None:  # We are using RoPE
             if token_positions == None:  # create default 0, 1, .... positions if nothing else is supplied
@@ -492,12 +510,46 @@ class GroupedQueryAttention(nn.Module):
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
 
-        mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
-        #mha = scaled_dot_product_attention(Q, K, V, mask=self.tril)
+        # mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
+        mha = scaled_dot_product_gqa(Q, K, V, mask=self.tril, num_kv_groups=self.num_kv_groups)
         # rearrenge back into original embedding dimension
         mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
         # import sys; sys.exit()
         return self.Wo(mha)
+
+
+@staticmethod
+def scaled_dot_product_gqa(Q, K, V, mask, num_kv_groups):
+    """
+    K and V are group the attention heads into larger groups.
+
+    Q shape: [batch, num_heads, seq_len, d_k]
+    K shape: [batch, num_kv_groups, seq_len, d_k]
+    V shape: [batch, num_kv_groups, seq_len, d_v]
+    """
+    d_k = Q.shape[-1]
+    seq_len = Q.shape[-2]
+    # print(f"{Q.shape=}  {K.shape=} | {V.shape=}")
+
+    # V = rearrange(self.Wv(x), "b s (group d_v) -> b group s d_v", d_v=self.d_v)
+    Q_grouped = rearrange(Q, "b (group heads_per_group) sq d_k -> b group heads_per_group sq d_k", group=num_kv_groups)
+    K = rearrange(K, "b group sk d_k ->  b group 1 sk d_k")
+    V = rearrange(V, "b group sk d_v ->  b group 1 sk d_v")
+    # print(f"{Q_grouped.shape=}  {K.shape=} | {V.shape=}")
+    attn = einsum(
+        Q_grouped, K, "b group heads_per_group sq d_k, b group heads_per_group sk d_k -> b group heads_per_group sq sk"
+    ) / math.sqrt(d_k)
+    # apply mask if included
+    if mask is not None:
+        attn = attn.masked_fill(mask[:seq_len, :seq_len] == False, float("-inf"))
+    result = einsum(
+        softmax(x=attn, dimension=-1),
+        V,
+        "b group heads_per_group sq sk, b group heads_per_group sk d_v -> b group heads_per_group sq d_v",
+    )
+    result = rearrange(result, "b group heads_per_group sq d_v -> b (group heads_per_group) sq d_v")
+    return result
+
 
 @staticmethod
 def softmax(x: torch.Tensor, dimension: int, temp: int = 1):
@@ -519,6 +571,7 @@ def scaled_dot_product_attention(Q, K, V, mask):
     if mask is not None:
         attn = attn.masked_fill(mask[:seq_len, :seq_len] == False, float("-inf"))
     result = einsum(softmax(x=attn, dimension=-1), V, "b ... sq sk, b ... sk d_v -> b ... sq d_v")
+
     return result
 
 
