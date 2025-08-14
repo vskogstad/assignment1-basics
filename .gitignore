@@ -1,6 +1,7 @@
 # Large data files
 data/text_data/
 data/training_data/owt_train.npy
+data/training_data/owt_train_s.npy
 data/training_data/owt_valid.npy
 data/training_data/tiny_train.npy
 cs336_basics/configs/experiments/checkpoints/
@@ -174,3 +175,4 @@ cython_debug/
 
 .ruff_cache/
 *.zip
+data/training_data/truncate_numpy.py
