@@ -82,6 +82,9 @@ def train(cfg: Config):
     )  # , fullgraph=True)
     optimizer = get_optimizer(cfg=cfg, model=model)
     assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
+    loss_func = torch.compile(cross_entropy, fullgraph=True)
+
+
 
     # Data loading
     train_data = np.load(cfg.train_dataset_path, mmap_mode="r")
@@ -118,7 +121,7 @@ def train(cfg: Config):
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             y_pred = model(x)
 
-            loss = cross_entropy(pred=y_pred, targets=y)
+            loss = cross_entropy(pred=y_pred, targets=y) # loss_func(pred=y_pred, targets=y)
         # Trying to search for nan-source using regular cross entropy
         # loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
         loss.backward()
