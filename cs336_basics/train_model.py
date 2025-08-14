@@ -23,7 +23,8 @@ from cs336_basics.utils import resource_accounting, step_law_lr
 # Test the optimization with pytorch matrix-sizes.
 # Test scaling ln with depth     https://arxiv.org/pdf/2502.05795
 # Test corrected optimal batch-size and learning rate.
-# Grouped query attention.
+# x  Grouped query attention.
+# speed up loss calculation (triton kernel?)
 # KV-cache.
 # Perplexity measurement.
 """
@@ -72,10 +73,7 @@ def train(cfg: Config):
     step_law_lr(
         len_data=140_000 * 5200, non_embedding_params=non_embedding_params, context_length=cfg.context_length
     )  # For our specific task use fixed len_data
-    # step_law_lr(len_data=len(train_data), non_embedding_params =non_embedding_params)
-    import sys
 
-    sys.exit()
     # Load model, optimizer and scheduler
     model = (
         get_model(cfg, device) if device == torch.device("cpu") else torch.compile(get_model(cfg, device))
@@ -88,13 +86,13 @@ def train(cfg: Config):
 
     # Data loading
     train_data = np.load(cfg.train_dataset_path, mmap_mode="r")
+    print(f"The training dataset contains {len(train_data):,} tokens")
     val_data = np.load(cfg.val_dataset_path, mmap_mode="r")
     tokenizer = Tokenizer.from_files(
         vocab_filepath=cfg.tokenizer_vocab_path,
         merges_filepath=cfg.tokenizer_merges_path,
     )
 
-    sys.exit()
     # Initialize logging
     if cfg.wandb_project:
         wandb.login()
@@ -186,7 +184,7 @@ def train(cfg: Config):
             # model.sample(tokenizer=tokenizer, prompt="It was a nice day")
 
         # checkpointing
-        if step % cfg.save_interval == 0 and step != 0:
+        if step % cfg.save_interval == 0:  # and step != 0:
             save_checkpoint(
                 model=model,
                 optimizer=optimizer,
@@ -346,7 +344,10 @@ def load_checkpoint(
 ):
     if not os.path.exists(src):
         raise FileNotFoundError(f"Checkpoint not found at {src}")
-    checkpoint = torch.load(src)
+    if torch.cuda.is_available():
+        checkpoint = torch.load(src)
+    else:
+        checkpoint = torch.load(src, map_location=torch.device("cpu"))
     model.load_state_dict(checkpoint["model"])
     if optimizer:
         optimizer.load_state_dict(checkpoint["optimizer"])
@@ -694,6 +695,13 @@ if __name__ == "__main__":
     config = Config.from_yaml(args.config)
     config.update_from_args(args)
 
+    sample_from_model_checkpoint(
+        model_path="cs336_basics/configs/experiments/checkpoints/full-run-tiny_0.pth",
+        cfg=config,
+        num_samples=2,
+        prompt="Once upon a time",
+    )
+
     # Save final config to experiment directory
     os.makedirs(config.output_dir, exist_ok=True)
     config.save(os.path.join(config.output_dir, f"{config.experiment_name}_config.yaml"))
@@ -712,7 +720,7 @@ if __name__ == "__main__":
     print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
 
     sample_from_model_checkpoint(
-        model_path=r"cs336_basics\configs\experiments\checkpoints\base_cpu_0.pth",
+        model_path=r"cs336_basics/configs/experiments/checkpoints/full-run-tiny_10000.pth",
         cfg=config,
         num_samples=2,
         prompt="Once upon a time",

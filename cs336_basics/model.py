@@ -123,10 +123,11 @@ class Block(nn.Module):
         glu: bool = True,
     ):
         super().__init__()
-        self.mha = MultiHeadAttention(
+        self.mha = GroupedQueryAttention(
             d_model=d_model,
             num_heads=num_heads,
             max_sequence_length=max_sequence_length,
+            num_kv_groups=int(num_heads / 4),
             theta=theta,
             device=device,
             dtype=dtype,
@@ -258,7 +259,6 @@ class Transformer(nn.Module):
         x = self.layers(x)
         x = self.rmsn_f(x)
         x = self.lm_head(x)
-        # y = softmax(x=x, dimension=-1)
         return x  # y
 
     def get_block_module(self, glu, pre_norm, layer_norm):
@@ -281,36 +281,48 @@ class Transformer(nn.Module):
         temp: int = 1,
         top_p: int = 0.5,
     ):
+        """
+        Sampling using Top-p.
+
+        Top p samples from the n most probable responses which sum is >= top_p. 
+        Unlike top_k which always samples from the k highest probs. n's range of possibilities is dynamic, while k is fixed.
+        """
         with torch.no_grad():
             sequence = tokenizer.encode(prompt) if prompt else tokenizer.encode("\n")
-            end_of_text_token = tokenizer.encode("<|endoftext|>")[0]
+            # end_of_text_token = tokenizer.encode("<|endoftext|>")[0]
             sequence = torch.tensor(sequence, dtype=torch.long, device=self.device).unsqueeze(0).repeat(num_samples, 1)
-            print(f"{sequence.shape = }")
+            # print(f"{sequence.shape = }")
 
             # turn sequence into torch tensor
-            while len(sequence[-1]) < max_tokens:
+            while sequence.shape[-1] < max_tokens:
                 out = self(sequence)  # forward pass
                 logits = softmax(out, dimension=-1, temp=temp)
                 logits = logits[:, -1, :]
 
                 # sort each batch while storing orignial indexes
+                sorted, indices = torch.sort(logits, -1, descending=True)
+                # print(sorted, indices)
+                
+                # torch.cumsum() accumualtes the numbers, find those which values < p
+                cum_sum_probs = torch.cumsum(sorted, -1)
+                top_probs = cum_sum_probs < top_p # this is off-by-one to our target
+                # print(f"{torch.ones((num_samples, 1)).shape=} | {top_probs[:,:-1].shape}")
+                # Add an initial True to our tensors to correct for off-by-one
+                top_probs = torch.cat((torch.ones((num_samples, 1), dtype=bool, device=self.device), top_probs[:,:-1]), dim=-1)
+                # print(top_probs)
 
-                # compute top p using torch.cumsum()
-                torch.cumsum()
+                # mask out probabilities that are not in top_p
+                sorted[~top_probs] = 0
 
-                # create a mask that will cover probabilities that are not in previous list.
 
-                probs = torch.masked_fill(
-                    logits,
-                    mask,
-                )
-
-                # Implementing top P samling. Likely inefficient.
-                next_token = torch.multinomial(
-                    probs,
+                # Sample 
+                sampled_indices = torch.multinomial(
+                    sorted,
                     num_samples=1,
                 )
-                # Top p samples from the n samples that sum to top_p. Unlike top_k which samples from the k highest probs. n's range of possibilities is dynamic, k is fixed.
+
+                next_token = torch.gather(indices, dim=-1, index=sampled_indices)
+                
                 """p, indices = torch.sort(logits, dim=-1)
                 i = 0
                 p_accum = 0
@@ -324,9 +336,12 @@ class Transformer(nn.Module):
                 )  # adding additional dimensions
                 """
                 sequence = torch.cat((sequence, next_token), dim=-1)
+                print(sequence)
+                import sys;
+                sys.exit()
 
         for i in range(num_samples):
-            print(tokenizer.decode(sequence.squeeze().tolist()) + "\n")
+            print(tokenizer.decode(sequence[i, :].squeeze().tolist()) + "\n")
         return
 
 
@@ -360,7 +375,7 @@ class RoPE(nn.Module):
 
     def rotate_half(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Except for comments, this is all rewriting Meta's implementation with help from Claude. I had implemeted the transformer-version of Neox-RoPE,
+        Except for comments, this is basically rewriting Meta's implementation with help from Claude. I had implemeted the transformer-version of Neox-RoPE,
         but that fails the test.
 
         Interleaved rotation: (-x2, x1, -x4, x3, -x6, x5, ...)
@@ -450,6 +465,107 @@ class MultiHeadAttention(nn.Module):
         return self.Wo(mha)
 
 
+class GroupedQueryAttention(nn.Module):
+    """
+    K and V are group the attention heads into larger groups.
+
+    Q shape: [batch, num_heads, seq_len, d_k]
+    K shape: [batch, num_kv_groups, seq_len, d_k]
+    V shape: [batch, num_kv_groups, seq_len, d_v]
+    """
+
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        num_kv_groups: int,
+        max_sequence_length: int | None = None,
+        theta: float | None = None,
+        dtype: torch.dtype | None = None,
+        device: torch.device | None = None,
+    ):
+        super().__init__()
+        self.num_heads = num_heads
+        assert d_model % num_heads == 0
+        self.d_k = self.d_v = int(d_model / num_heads)
+
+        self.num_kv_groups = num_kv_groups
+        self.group_size = num_heads / num_kv_groups  # each group consists of group_size number of heads
+
+        # print(f"{type(num_kv_groups * self.d_k)=} | {type(d_model) =}")
+        self.Wq = Linear(d_model, num_heads * self.d_k, device=device, dtype=dtype, set_zero=True)
+        self.Wk = Linear(d_model, num_kv_groups * self.d_k, device=device, dtype=dtype)
+        self.Wv = Linear(d_model, num_kv_groups * self.d_v, device=device, dtype=dtype)
+        self.Wo = Linear(num_heads * self.d_v, d_model, device=device, dtype=dtype, set_zero=True)
+
+        # self.register_buffer(name="tril", tensor=torch.tril(torch.ones((d_model,d_model))))
+        if max_sequence_length is None:
+            max_sequence_length = (
+                d_model  # set it to some slightly large number to pass tests, should be using max_sequence length.
+            )
+        self.tril = torch.tril(torch.ones((max_sequence_length, max_sequence_length), device=device, dtype=dtype))
+        if theta is not None:
+            self.rope = RoPE(theta=theta, d_k=self.d_k, max_sequence_length=max_sequence_length, device=device)
+        else:
+            self.rope = None
+
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
+        # We split the embedding dimension into an additional batch dimension (heads)
+        Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
+        K = rearrange(
+            self.Wk(x),
+            "b s (group d_k) -> b group s d_k",
+            d_k=self.d_k,
+        )
+        V = rearrange(self.Wv(x), "b s (group d_v) -> b group s d_v", d_v=self.d_v)
+
+        if self.rope != None:  # We are using RoPE
+            if token_positions == None:  # create default 0, 1, .... positions if nothing else is supplied
+                token_positions = torch.arange(Q.shape[-2])  # Seems brittle
+            Q = self.rope(Q, token_positions)
+            K = self.rope(K, token_positions)
+
+        # mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
+        mha = scaled_dot_product_gqa(Q, K, V, mask=self.tril, num_kv_groups=self.num_kv_groups)
+        # rearrenge back into original embedding dimension
+        mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
+        # import sys; sys.exit()
+        return self.Wo(mha)
+
+
+@staticmethod
+def scaled_dot_product_gqa(Q, K, V, mask, num_kv_groups):
+    """
+    K and V are group the attention heads into larger groups.
+
+    Q shape: [batch, num_heads, seq_len, d_k]
+    K shape: [batch, num_kv_groups, seq_len, d_k]
+    V shape: [batch, num_kv_groups, seq_len, d_v]
+    """
+    d_k = Q.shape[-1]
+    seq_len = Q.shape[-2]
+    # print(f"{Q.shape=}  {K.shape=} | {V.shape=}")
+
+    # V = rearrange(self.Wv(x), "b s (group d_v) -> b group s d_v", d_v=self.d_v)
+    Q_grouped = rearrange(Q, "b (group heads_per_group) sq d_k -> b group heads_per_group sq d_k", group=num_kv_groups)
+    K = rearrange(K, "b group sk d_k ->  b group 1 sk d_k")
+    V = rearrange(V, "b group sk d_v ->  b group 1 sk d_v")
+    # print(f"{Q_grouped.shape=}  {K.shape=} | {V.shape=}")
+    attn = einsum(
+        Q_grouped, K, "b group heads_per_group sq d_k, b group heads_per_group sk d_k -> b group heads_per_group sq sk"
+    ) / math.sqrt(d_k)
+    # apply mask if included
+    if mask is not None:
+        attn = attn.masked_fill(mask[:seq_len, :seq_len] == False, float("-inf"))
+    result = einsum(
+        softmax(x=attn, dimension=-1),
+        V,
+        "b group heads_per_group sq sk, b group heads_per_group sk d_v -> b group heads_per_group sq d_v",
+    )
+    result = rearrange(result, "b group heads_per_group sq d_v -> b (group heads_per_group) sq d_v")
+    return result
+
+
 @staticmethod
 def softmax(x: torch.Tensor, dimension: int, temp: int = 1):
     """TODO: Check stability of this might be better with just torch.max(x)"""
@@ -470,6 +586,7 @@ def scaled_dot_product_attention(Q, K, V, mask):
     if mask is not None:
         attn = attn.masked_fill(mask[:seq_len, :seq_len] == False, float("-inf"))
     result = einsum(softmax(x=attn, dimension=-1), V, "b ... sq sk, b ... sk d_v -> b ... sq d_v")
+
     return result
 
 
