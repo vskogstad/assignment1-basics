@@ -19,6 +19,7 @@ class Config:
     pre_norm: bool
     glu: bool
     layer_norm: bool
+    num_kv_groups: int | None
 
     # data loading
     train_dataset_path: str

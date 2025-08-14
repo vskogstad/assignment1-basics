@@ -121,17 +121,28 @@ class Block(nn.Module):
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
         glu: bool = True,
+        num_kv_groups: int | None = None,
     ):
         super().__init__()
-        self.mha = GroupedQueryAttention(
-            d_model=d_model,
-            num_heads=num_heads,
-            max_sequence_length=max_sequence_length,
-            num_kv_groups=int(num_heads / 4),
-            theta=theta,
-            device=device,
-            dtype=dtype,
-        )
+        if num_kv_groups:
+            self.mha = GroupedQueryAttention(
+                d_model=d_model,
+                num_heads=num_heads,
+                max_sequence_length=max_sequence_length,
+                num_kv_groups=num_kv_groups,
+                theta=theta,
+                device=device,
+                dtype=dtype,
+            )
+        else:
+            self.mha = MultiHeadAttention(
+                d_model=d_model,
+                num_heads=num_heads,
+                max_sequence_length=max_sequence_length,
+                theta=theta,
+                device=device,
+                dtype=dtype,
+            )
         self.rmsn1 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
         self.scaling = depth**-0.5
         if glu:
@@ -445,6 +456,7 @@ class MultiHeadAttention(nn.Module):
         else:
             self.rope = None
 
+
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
         # We split the embedding dimension into an additional batch dimension (heads)
         Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
@@ -457,8 +469,8 @@ class MultiHeadAttention(nn.Module):
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
 
-        # mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
-        mha = scaled_dot_product_attention(Q, K, V, mask=self.tril)
+        mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
+        #mha = scaled_dot_product_attention(Q, K, V, mask=self.tril)
         # rearrenge back into original embedding dimension
         mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
         # import sys; sys.exit()
@@ -509,6 +521,7 @@ class GroupedQueryAttention(nn.Module):
         else:
             self.rope = None
 
+
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
         # We split the embedding dimension into an additional batch dimension (heads)
         Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
@@ -530,6 +543,7 @@ class GroupedQueryAttention(nn.Module):
         # rearrenge back into original embedding dimension
         mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
         # import sys; sys.exit()
+        
         return self.Wo(mha)
 
 

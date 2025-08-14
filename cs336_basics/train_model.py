@@ -119,9 +119,9 @@ def train(cfg: Config):
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             y_pred = model(x)
 
-            loss = cross_entropy(pred=y_pred, targets=y) # loss_func(pred=y_pred, targets=y)
+            loss = loss_func(pred=y_pred, targets=y)
         # Trying to search for nan-source using regular cross entropy
-        # loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
+            #loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
         loss.backward()
 
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
@@ -184,7 +184,7 @@ def train(cfg: Config):
             # model.sample(tokenizer=tokenizer, prompt="It was a nice day")
 
         # checkpointing
-        if step % cfg.save_interval == 0:  # and step != 0:
+        if step % cfg.save_interval == 0 and step != 0:
             save_checkpoint(
                 model=model,
                 optimizer=optimizer,
@@ -695,18 +695,13 @@ if __name__ == "__main__":
     config = Config.from_yaml(args.config)
     config.update_from_args(args)
 
-    sample_from_model_checkpoint(
-        model_path="cs336_basics/configs/experiments/checkpoints/full-run-tiny_0.pth",
-        cfg=config,
-        num_samples=2,
-        prompt="Once upon a time",
-    )
+
 
     # Save final config to experiment directory
     os.makedirs(config.output_dir, exist_ok=True)
     config.save(os.path.join(config.output_dir, f"{config.experiment_name}_config.yaml"))
 
-    a = torch.compile(train(cfg=config))  # , fullgraph=True)
+    a = torch.compile(train(cfg=config), fullgraph=True)
     import sys
 
     sys.exit()
@@ -719,6 +714,12 @@ if __name__ == "__main__":
     print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
     print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
 
+    sample_from_model_checkpoint(
+        model_path="cs336_basics/configs/experiments/checkpoints/full-run-tiny_0.pth",
+        cfg=config,
+        num_samples=2,
+        prompt="Once upon a time",
+    )
     sample_from_model_checkpoint(
         model_path=r"cs336_basics/configs/experiments/checkpoints/full-run-tiny_10000.pth",
         cfg=config,

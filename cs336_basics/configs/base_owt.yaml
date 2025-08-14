@@ -3,13 +3,14 @@ model_name: "transformer"
 vocab_size: 32000 # 32768
 num_layers: 8
 num_heads: 16
-d_model: 2048
-d_ff: 4096
+d_model: 1024
+d_ff: 2688
 context_length: 512
 theta: 10000
 pre_norm: true
 layer_norm: true
 glu: true
+num_kv_groups: null
 
 # data loading
 train_dataset_path: "data/training_data/owt_train.npy"
