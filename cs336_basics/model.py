@@ -469,8 +469,8 @@ class MultiHeadAttention(nn.Module):
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
 
-        mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
-        #mha = scaled_dot_product_attention(Q, K, V, mask=self.tril)
+        #mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
+        mha = scaled_dot_product_attention(Q, K, V, mask=self.tril)
         # rearrenge back into original embedding dimension
         mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
         # import sys; sys.exit()
@@ -548,6 +548,7 @@ class GroupedQueryAttention(nn.Module):
 
 
 @staticmethod
+#@torch.compile(fullgraph=True)
 def scaled_dot_product_gqa(Q, K, V, mask, num_kv_groups):
     """
     K and V are group the attention heads into larger groups.

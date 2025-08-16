@@ -79,6 +79,7 @@ def train(cfg: Config):
         get_model(cfg, device) if device == torch.device("cpu") else torch.compile(get_model(cfg, device))
     )  # , fullgraph=True)
     optimizer = get_optimizer(cfg=cfg, model=model)
+    
     assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
     loss_func = torch.compile(cross_entropy, fullgraph=True)
 
@@ -531,6 +532,7 @@ class Muon(torch.optim.Optimizer):
         return loss
 
 
+@torch.compile(fullgraph=True)
 class MuonWithAdamW(torch.optim.Optimizer):
     """
     Uses the modified Muon with transfer of LR parameters from adamw using the following formula:
@@ -580,8 +582,8 @@ class MuonWithAdamW(torch.optim.Optimizer):
                     v = beta_2 * v + (1 - beta_2) * grad**2  # Update second moment estimate
 
                     lr_t = lr * (math.sqrt(1 - beta_2**t) / (1 - beta_1**t))  # adjust lr
-                    p.data -= lr_t * (m / (torch.sqrt(v) + eps))  # Update weight tensor in-place.
-                    p.data -= lr * weight_decay * p.data  # Apply weight decay
+                    p.data = p.data - lr_t * (m / (torch.sqrt(v) + eps))  # Update weight tensor in-place.
+                    p.data = p.data - lr * weight_decay * p.data  # Apply weight decay
                     state["t"] = t + 1  # Increment iteration number.
                     state["m"] = m
                     state["v"] = v
@@ -701,7 +703,9 @@ if __name__ == "__main__":
     os.makedirs(config.output_dir, exist_ok=True)
     config.save(os.path.join(config.output_dir, f"{config.experiment_name}_config.yaml"))
 
-    a = torch.compile(train(cfg=config), fullgraph=True)
+    #train(cfg=config)
+    train(cfg=config)
+
     import sys
 
     sys.exit()
