@@ -12,7 +12,7 @@ class ResourceConfig:
 
 
 def resource_accounting(config):
-    """Need to implement GLU-counting if we are to do this exactly for our model"""
+    """Not happy with this. FLOPS/memory is in the right ball park/wrong respectively. I think parameters are correct."""
     d_model = config.d_model
     vocab_size = config.vocab_size
     num_layers = config.num_layers

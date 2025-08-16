@@ -697,36 +697,20 @@ if __name__ == "__main__":
     config = Config.from_yaml(args.config)
     config.update_from_args(args)
 
-
-
     # Save final config to experiment directory
     os.makedirs(config.output_dir, exist_ok=True)
     config.save(os.path.join(config.output_dir, f"{config.experiment_name}_config.yaml"))
 
-    #train(cfg=config)
+    # train the model
     train(cfg=config)
 
-    import sys
+    import sys; sys.exit()
 
-    sys.exit()
-    # train the model
-    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
-        with record_function("model_inference"):
-            pass
 
-    # report results
-    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
-    print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
-
+    # Sampling snippet
     sample_from_model_checkpoint(
-        model_path="cs336_basics/configs/experiments/checkpoints/full-run-tiny_0.pth",
+        model_path="cs336_basics/configs/experiments/checkpoints/Lr24_10500.pth",
         cfg=config,
-        num_samples=2,
-        prompt="Once upon a time",
-    )
-    sample_from_model_checkpoint(
-        model_path=r"cs336_basics/configs/experiments/checkpoints/full-run-tiny_10000.pth",
-        cfg=config,
-        num_samples=2,
+        num_samples=10,
         prompt="Once upon a time",
     )

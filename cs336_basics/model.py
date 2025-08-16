@@ -347,9 +347,7 @@ class Transformer(nn.Module):
                 )  # adding additional dimensions
                 """
                 sequence = torch.cat((sequence, next_token), dim=-1)
-                print(sequence)
-                import sys;
-                sys.exit()
+                
 
         for i in range(num_samples):
             print(tokenizer.decode(sequence[i, :].squeeze().tolist()) + "\n")
