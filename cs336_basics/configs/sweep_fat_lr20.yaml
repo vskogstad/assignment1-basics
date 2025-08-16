@@ -1,0 +1,45 @@
+#model configuration
+model_name: "transformer"
+vocab_size: 32768 # 32768
+num_layers: 10
+num_heads: 8
+d_model: 2048
+d_ff: 4096
+context_length: 512
+theta: 10000
+pre_norm: true
+layer_norm: true
+glu: true
+num_kv_groups: null
+
+# data loading
+train_dataset_path: "data/training_data/owt_train.npy"
+val_dataset_path: "data/training_data/owt_valid.npy"
+tokenizer_vocab_path: "data/tokenizer_data/vocab_owt_train.pkl"
+tokenizer_merges_path: "data/tokenizer_data/merges_owt_train.pkl"
+
+# Training configuration
+dtype: float32 # bfloat16
+batch_size: 128
+min_learning_rate: 1.0e-5
+max_learning_rate: 0.0020
+weight_decay: 0.1
+warmup_steps: 600
+total_steps: 9501
+cosine_cycle_steps: 9501
+betas: [0.9, 0.95]
+eps: 1.0e-8
+muon_momentum: 0.95
+grad_clip_norm: 1.0
+optimizer: "muon"
+scheduler: "cosine"
+
+# Experiment configuration
+experiment_name: "scaling up"
+seed: 42
+log_interval: 10
+eval_interval: 9500
+save_interval: 10000
+output_dir: "cs336_basics/configs/experiments"
+wandb_project: H100-sxm5-OWT-testruns
+from_checkpoint: null #"cs336_basics/checkpoints/baseline_2000.pth"

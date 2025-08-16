@@ -95,6 +95,7 @@ def resource_accounting(config):
 
 def step_law_lr(len_data, non_embedding_params, context_length):
     opti_batch = 0.58 * len_data ** 0.571
+    
     opti_lr = 1.79 * non_embedding_params **(-0.713) * len_data **0.307
     print(f"Dataset is {len_data:,} tokens. \nOptimal batch size = {opti_batch} tokens or {opti_batch/context_length} sequence_batches. \nOptimal lr = {opti_lr:.4f}")
 

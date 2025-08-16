@@ -21,8 +21,8 @@ from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.utils import resource_accounting, step_law_lr
 
 # Test the optimization with pytorch matrix-sizes.
-# Test scaling ln with depth     https://arxiv.org/pdf/2502.05795
-# Test corrected optimal batch-size and learning rate.
+# x Test scaling ln with depth     https://arxiv.org/pdf/2502.05795
+# x Test corrected optimal batch-size and learning rate.
 # x  Grouped query attention.
 # speed up loss calculation (triton kernel?)
 # KV-cache.

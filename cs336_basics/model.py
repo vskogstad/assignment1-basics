@@ -589,7 +589,7 @@ def softmax(x: torch.Tensor, dimension: int, temp: int = 1):
     result = torch.exp(x_mod) / torch.sum(torch.exp(x_mod), dim=dimension, keepdim=True)
     return result
 
-
+@torch.compile()
 @staticmethod
 def scaled_dot_product_attention(Q, K, V, mask):
     d_k = Q.shape[-1]
