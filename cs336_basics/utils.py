@@ -7,13 +7,13 @@ def runcmd(cmd, *args, **kwargs):
         print(f"Completed: {cmd}")
     except subprocess.CalledProcessError as e:
         print(f"Failed: {cmd} (exit code: {e.returncode})")
-    process = #subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True)
+    #process = #subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True)
     #std_out, std_err = process.communicate()
 
 
-def download_training_file(file):
+def download_training_file(file, filepath):
     try:
-        subprocess.run(f"wget -P data/training_data {file}", check=True)
+        subprocess.run(["wget", "-P", "data/training_data", filepath], check=True)
         print(f"Completed dowloading: {file}")
     except subprocess.CalledProcessError as e:
         print(f"Failed dowloading: {file} (exit code: {e.returncode})")
