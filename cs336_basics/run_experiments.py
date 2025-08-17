@@ -42,7 +42,7 @@ def main():
             print(f"\nStopping due to failed experiment: {experiment_name}")
             sys.exit(1)
     
-    print(f"\n All experiments completed.")
+    print("\n All experiments completed.")
 
 if __name__ == "__main__":
     main()

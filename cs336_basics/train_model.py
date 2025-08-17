@@ -79,11 +79,9 @@ def train(cfg: Config):
         get_model(cfg, device) if device == torch.device("cpu") else torch.compile(get_model(cfg, device))
     )  # , fullgraph=True)
     optimizer = get_optimizer(cfg=cfg, model=model)
-    
+
     assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
     loss_func = torch.compile(cross_entropy, fullgraph=True)
-
-
 
     # Data loading
     train_data = np.load(cfg.train_dataset_path, mmap_mode="r")
@@ -122,7 +120,7 @@ def train(cfg: Config):
 
             loss = loss_func(pred=y_pred, targets=y)
         # Trying to search for nan-source using regular cross entropy
-            #loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
+        # loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
         loss.backward()
 
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
@@ -178,7 +176,7 @@ def train(cfg: Config):
         # validation
         if step % cfg.eval_interval == 0 and step != 0:
             val_loss = calculate_loss(model, val_data, cfg, current_tokens, device, rng=rng)
-            print(f"The validation loss is {val_loss:.2f}")
+            print(f"The validation loss is {val_loss:.4f}")
             if cfg.wandb_project:
                 wandb.log({"Validation loss": val_loss}, step=current_tokens)
             # print(f"Sampling from the model at step {step}")
@@ -704,9 +702,9 @@ if __name__ == "__main__":
     # train the model
     train(cfg=config)
 
-    import sys; sys.exit()
+    import sys
 
-
+    sys.exit()
     # Sampling snippet
     sample_from_model_checkpoint(
         model_path="cs336_basics/configs/experiments/checkpoints/Lr24_10500.pth",
