@@ -579,7 +579,7 @@ def scaled_dot_product_gqa(Q, K, V, mask, num_kv_groups):
     return result
 
 
-@staticmethod
+@torch.compile(fullgraph=True)
 def softmax(x: torch.Tensor, dimension: int, temp: int = 1):
     """TODO: Check stability of this might be better with just torch.max(x)"""
     max_x = torch.max(x, dim=dimension, keepdim=True)[0]
@@ -588,7 +588,6 @@ def softmax(x: torch.Tensor, dimension: int, temp: int = 1):
     return result
 
 @torch.compile()
-@staticmethod
 def scaled_dot_product_attention(Q, K, V, mask):
     d_k = Q.shape[-1]
     seq_len = Q.shape[-2]

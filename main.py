@@ -9,7 +9,7 @@ if __name__ == "__main__":
     config = Config.from_yaml("cs336_basics/configs/best.yaml")
 
     # Download training_data files if needed.
-    files = {"data/training_data/owt_train_s.npy": "https://huggingface.co/datasets/vskogstad/OpenWebText-train/resolve/main/owt_train_s.npy", 
+    files = {"data/training_data/owt_train.npy": "https://huggingface.co/datasets/vskogstad/OpenWebText-train/resolve/main/owt_train.npy", 
              "data/training_data/owt_valid.npy": "https://huggingface.co/datasets/vskogstad/OpenWebText-train/resolve/main/owt_valid.npy"}
     for file, link in files.items():
         if not os.path.exists(file):
