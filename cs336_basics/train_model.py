@@ -110,9 +110,15 @@ def train(cfg: Config):
 
     # Training loop
     for step in range(current_step, cfg.total_steps):
+        #x, y = get_batch(dataset=train_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device, rng=rng)
         x, y = get_batch(
-            dataset=train_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device, rng=rng
-        )
+                dataset=train_data,
+                batch_size=cfg.batch_size,
+                context_length=cfg.context_length,
+                device=device,
+                rng=None,
+                current_iter=step,
+            )
 
         optimizer.zero_grad()
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
