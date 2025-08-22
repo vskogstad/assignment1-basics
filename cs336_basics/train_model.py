@@ -91,6 +91,8 @@ def train(cfg: Config):
         vocab_filepath=cfg.tokenizer_vocab_path,
         merges_filepath=cfg.tokenizer_merges_path,
     )
+    max_idx = len(train_data) // (cfg.batch_size * cfg.context_length)
+    draw = rng.choice(max_idx, cfg.total_steps, replace=False)
 
     # Initialize logging
     if cfg.wandb_project:
@@ -100,6 +102,8 @@ def train(cfg: Config):
     current_tokens = 0
     chunk_steps = 0
     chunk_loss = 0
+
+
 
     # Load from checkpoint
     if cfg.from_checkpoint:
@@ -117,7 +121,7 @@ def train(cfg: Config):
                 context_length=cfg.context_length,
                 device=device,
                 rng=None,
-                current_iter=step,
+                current_iter=draw[step],
             )
 
         optimizer.zero_grad()
