@@ -91,8 +91,11 @@ def train(cfg: Config):
         vocab_filepath=cfg.tokenizer_vocab_path,
         merges_filepath=cfg.tokenizer_merges_path,
     )
-    max_idx = len(train_data) // (cfg.batch_size * cfg.context_length)
-    draw = rng.choice(max_idx, cfg.total_steps, replace=False)
+    max_idx = len(train_data) // (cfg.context_length)
+    starts = np.arange(max_idx) * cfg.context_length
+    rng.shuffle(starts)
+    starts = starts[:cfg.total_steps * cfg.batch_size].reshape(-1, cfg.batch_size)
+    print(starts)
 
     # Initialize logging
     if cfg.wandb_project:
@@ -115,13 +118,12 @@ def train(cfg: Config):
     # Training loop
     for step in range(current_step, cfg.total_steps):
         #x, y = get_batch(dataset=train_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device, rng=rng)
-        x, y = get_batch(
+        x, y = get_batch_2(
                 dataset=train_data,
                 batch_size=cfg.batch_size,
                 context_length=cfg.context_length,
                 device=device,
-                rng=None,
-                current_iter=draw[step],
+                starts=starts[step],
             )
 
         optimizer.zero_grad()
@@ -366,6 +368,49 @@ def load_checkpoint(
     return checkpoint["iteration"]
 
 
+
+def get_batch_2(
+    dataset: np.array, batch_size: int, context_length: int, device: str, starts, rng=None, current_iter: int | None = None
+):
+    """
+    Gets a random or fixed batch of x and y tensors for the model to train on. If a rng is passed, it will be used.
+    If current_iter is passed the function will return the current_iter batch in the data_set.
+    """
+    assert rng is None or current_iter is None  # we should never be passing both a generator and a fixed starting point
+
+    if len(dataset) < context_length:
+        raise ValueError("Dataset smaller than context length, not possible to create batches")
+
+    # Generate random starting indices unless we get passed a generator
+    max_start_idx = len(dataset) - context_length - 1
+
+    if rng:
+        starts = rng.integers(0, max_start_idx + 1, size=batch_size)
+    elif current_iter is not None:
+        if len(dataset) < current_iter * context_length * batch_size:
+            raise ValueError("Trying to access a chunk of the dataset that does not exist.")
+        # We want to test for the entire dataset, starting pos.
+        # Eeach batch has "batch_size" number of samples with length = "context_length"
+        # we want to make sure each starting point are context_length apart
+        offset = current_iter * context_length * batch_size  # scale offset by previous batches
+        # print(f"{starting_pos = } | {batch_size = } | {context_length = } | {offset = }")
+        starts = np.arange(batch_size) * context_length + offset
+        # print(starts)
+        while starts[-1] > max_start_idx:  # On final section, decrease batch_size to fit remaining data.
+            starts = starts[:-1]
+    else:
+        starts = starts # np.random.randint(0, max_start_idx + 1, size=batch_size)
+
+    # Create index arrays for vectorized sampling
+    indices = starts[:, None] + np.arange(context_length + 1)
+
+    batch = torch.from_numpy(dataset[indices]).to(device=device, dtype=torch.int32)  # .dtype(torch.int16)
+
+    x = batch[:, :-1]
+    y = batch[:, 1:]
+    # print(x[0][0])
+    return x, y
+
 def get_batch(
     dataset: np.array, batch_size: int, context_length: int, device: str, rng=None, current_iter: int | None = None
 ):
@@ -388,7 +433,7 @@ def get_batch(
             raise ValueError("Trying to access a chunk of the dataset that does not exist.")
         # We want to test for the entire dataset, starting pos.
         # Eeach batch has "batch_size" number of samples with length = "context_length"
-        # we want to make sure each starting point are context_lengt apart
+        # we want to make sure each starting point are context_length apart
         offset = current_iter * context_length * batch_size  # scale offset by previous batches
         # print(f"{starting_pos = } | {batch_size = } | {context_length = } | {offset = }")
         starts = np.arange(batch_size) * context_length + offset
