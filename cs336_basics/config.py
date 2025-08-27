@@ -97,6 +97,10 @@ def get_parser():
     parser.add_argument("--pre_norm", type=bool)
     parser.add_argument("--layer_norm", type=bool)
     parser.add_argument("--glu", type=bool)
+    parser.add_argument("--d_model", type=int)
+    parser.add_argument("--d_ff", type=int)
+    parser.add_argument("--num_layers", type=int)
+    parser.add_argument("--num_heads", type=int)
     
 
     return parser

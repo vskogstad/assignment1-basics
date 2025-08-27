@@ -91,6 +91,9 @@ def train(cfg: Config):
         vocab_filepath=cfg.tokenizer_vocab_path,
         merges_filepath=cfg.tokenizer_merges_path,
     )
+    # We use randomized unrepeated data if we have enough available, break out if not
+    assert(len(train_data) // (cfg.context_length * cfg.batch_size) > cfg.total_steps)
+    # "Multi-epoch training not implemented"
     max_idx = len(train_data) // (cfg.context_length)
     starts = np.arange(max_idx) * cfg.context_length
     rng.shuffle(starts)
@@ -118,7 +121,7 @@ def train(cfg: Config):
     # Training loop
     for step in range(current_step, cfg.total_steps):
         #x, y = get_batch(dataset=train_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device, rng=rng)
-        x, y = get_batch_2(
+        x, y = get_batch_nonrepeating(
                 dataset=train_data,
                 batch_size=cfg.batch_size,
                 context_length=cfg.context_length,
@@ -127,7 +130,7 @@ def train(cfg: Config):
             )
 
         optimizer.zero_grad()
-        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        with torch.autocast(device_type="cuda", dtype=cfg.dtype):
             y_pred = model(x)
 
             loss = loss_func(pred=y_pred, targets=y)
@@ -327,7 +330,7 @@ def get_model(cfg: Config, device):
             context_length=cfg.context_length,
             theta=cfg.theta,
             device=device,
-            dtype=cfg.dtype,
+            dtype=torch.float32, #hard-coded 
             pre_norm=cfg.pre_norm,
             layer_norm=cfg.layer_norm,
             glu=cfg.glu,
@@ -369,7 +372,7 @@ def load_checkpoint(
 
 
 
-def get_batch_2(
+def get_batch_nonrepeating(
     dataset: np.array, batch_size: int, context_length: int, device: str, starts, rng=None, current_iter: int | None = None
 ):
     """
