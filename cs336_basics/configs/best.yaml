@@ -20,7 +20,7 @@ tokenizer_merges_path: "data/tokenizer_data/merges_owt_train.pkl"
 #sample_without_replacement: true
 
 # Training configuration
-dtype: float32 # bfloat16
+dtype: bfloat16
 batch_size: 128
 min_learning_rate: 1.0e-5
 max_learning_rate: 0.0050

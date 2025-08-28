@@ -101,6 +101,7 @@ def get_parser():
     parser.add_argument("--d_ff", type=int)
     parser.add_argument("--num_layers", type=int)
     parser.add_argument("--num_heads", type=int)
+    parser.add_argument("--context_length", type=int)
     
 
     return parser

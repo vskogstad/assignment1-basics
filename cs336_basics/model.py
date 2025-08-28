@@ -88,6 +88,24 @@ class SILU(nn.Module):
         return x
 
 
+class SILU2(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = x * 1 / (1 + torch.exp(-x))
+        return x
+
+
+class ReLU2(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        torch.max(x, 0)
+        return x**2
+
+
 class SWIGLU(nn.Module):
     def __init__(self, d_model: int, d_ff: int, device: torch.device | None = None, dtype: torch.dtype | None = None):
         super().__init__()
@@ -295,7 +313,7 @@ class Transformer(nn.Module):
         """
         Sampling using Top-p.
 
-        Top p samples from the n most probable responses which sum is >= top_p. 
+        Top p samples from the n most probable responses which sum is >= top_p.
         Unlike top_k which always samples from the k highest probs. n's range of possibilities is dynamic, while k is fixed.
         """
         with torch.no_grad():
@@ -313,27 +331,28 @@ class Transformer(nn.Module):
                 # sort each batch while storing orignial indexes
                 sorted, indices = torch.sort(logits, -1, descending=True)
                 # print(sorted, indices)
-                
+
                 # torch.cumsum() accumualtes the numbers, find those which values < p
                 cum_sum_probs = torch.cumsum(sorted, -1)
-                top_probs = cum_sum_probs < top_p # this is off-by-one to our target
+                top_probs = cum_sum_probs < top_p  # this is off-by-one to our target
                 # print(f"{torch.ones((num_samples, 1)).shape=} | {top_probs[:,:-1].shape}")
                 # Add an initial True to our tensors to correct for off-by-one
-                top_probs = torch.cat((torch.ones((num_samples, 1), dtype=bool, device=self.device), top_probs[:,:-1]), dim=-1)
+                top_probs = torch.cat(
+                    (torch.ones((num_samples, 1), dtype=bool, device=self.device), top_probs[:, :-1]), dim=-1
+                )
                 # print(top_probs)
 
                 # mask out probabilities that are not in top_p
                 sorted[~top_probs] = 0
 
-
-                # Sample 
+                # Sample
                 sampled_indices = torch.multinomial(
                     sorted,
                     num_samples=1,
                 )
 
                 next_token = torch.gather(indices, dim=-1, index=sampled_indices)
-                
+
                 """p, indices = torch.sort(logits, dim=-1)
                 i = 0
                 p_accum = 0
@@ -347,7 +366,6 @@ class Transformer(nn.Module):
                 )  # adding additional dimensions
                 """
                 sequence = torch.cat((sequence, next_token), dim=-1)
-                
 
         for i in range(num_samples):
             print(tokenizer.decode(sequence[i, :].squeeze().tolist()) + "\n")
@@ -454,7 +472,6 @@ class MultiHeadAttention(nn.Module):
         else:
             self.rope = None
 
-
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
         # We split the embedding dimension into an additional batch dimension (heads)
         Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
@@ -467,7 +484,7 @@ class MultiHeadAttention(nn.Module):
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
 
-        #mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
+        # mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
         mha = scaled_dot_product_attention(Q, K, V, mask=self.tril)
         # rearrenge back into original embedding dimension
         mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
@@ -519,7 +536,6 @@ class GroupedQueryAttention(nn.Module):
         else:
             self.rope = None
 
-
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
         # We split the embedding dimension into an additional batch dimension (heads)
         Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
@@ -541,12 +557,12 @@ class GroupedQueryAttention(nn.Module):
         # rearrenge back into original embedding dimension
         mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
         # import sys; sys.exit()
-        
+
         return self.Wo(mha)
 
 
 @staticmethod
-#@torch.compile(fullgraph=True)
+# @torch.compile(fullgraph=True)
 def scaled_dot_product_gqa(Q, K, V, mask, num_kv_groups):
     """
     K and V are group the attention heads into larger groups.
@@ -586,6 +602,7 @@ def softmax(x: torch.Tensor, dimension: int, temp: int = 1):
     x_mod = (x - max_x) / temp
     result = torch.exp(x_mod) / torch.sum(torch.exp(x_mod), dim=dimension, keepdim=True)
     return result
+
 
 @torch.compile()
 def scaled_dot_product_attention(Q, K, V, mask):
