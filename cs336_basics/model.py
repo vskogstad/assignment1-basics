@@ -84,17 +84,9 @@ class SILU(nn.Module):
         super().__init__()
 
     def forward(self, x):
-        x = x * torch.sigmoid(x)
+        x = x / (1 + torch.exp(-x))
         return x
 
-
-class SILU2(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        x = x * 1 / (1 + torch.exp(-x))
-        return x
 
 
 class ReLU2(nn.Module):
@@ -102,8 +94,8 @@ class ReLU2(nn.Module):
         super().__init__()
 
     def forward(self, x):
-        torch.max(x, 0)
-        return x**2
+        x = torch.pow(torch.max(x, torch.zeros_like(x)))
+        return x
 
 
 class SWIGLU(nn.Module):
@@ -169,10 +161,10 @@ class Block(nn.Module):
             self.ffn = SILU()
         self.rmsn2 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, ve: torch.Tensor, lambdas):
         """Pre norm"""
         # Attention with prenorm and lns
-        x = x + 1 * self.mha(self.scaling * self.rmsn1(x))
+        x = x + 1 * self.mha(self.scaling * self.rmsn1(x), None, ve, lambdas)
         # SILU or SWIGLU FFN with prenorm and lns
         x = x + self.ffn(self.scaling * self.rmsn2(x))
         return x
@@ -260,32 +252,38 @@ class Transformer(nn.Module):
     ):
         super().__init__()
         self.embedding = Embedding(num_embeddings=vocab_size, embeddings_dim=d_model, device=device, dtype=dtype)
+        self.value_embedding = Embedding(num_embeddings=vocab_size, embeddings_dim=d_model, device=device, dtype=dtype)
+        self.lambdas = nn.Parameter(torch.ones(num_layers, 2, device=device) * 0.5,)
         block_module = self.get_block_module(
             glu, pre_norm, layer_norm
-        )  # For ablations, created separate modules to avoid branching in forward.
-        self.layers = nn.Sequential(
-            *[
-                block_module(
-                    d_model=d_model,
-                    num_heads=num_heads,
-                    d_ff=d_ff,
-                    depth=i + 1,
-                    max_sequence_length=context_length,
-                    theta=theta,
-                    device=device,
-                    dtype=dtype,
-                    glu=glu,
-                )
-                for i in range(num_layers)
-            ]
-        )
+        )  # For ablations, created separate modules to avoid branching in forward. Broken after adding value embeddings.
+        self.layers = nn.ModuleList([
+            block_module(
+                d_model=d_model,
+                num_heads=num_heads,
+                d_ff=d_ff,
+                depth=i + 1,
+                max_sequence_length=context_length,
+                theta=theta,
+                device=device,
+                dtype=dtype,
+                glu=glu,
+            )
+            for i in range(num_layers)
+        ])
         self.rmsn_f = RMSNorm(d_model=d_model, eps=1e-5, device=device, dtype=dtype)
         self.lm_head = Linear(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype, set_zero=True)
         self.device = device
 
     def forward(self, x: torch.Tensor):
+        ve = self.value_embedding(x)
+        lambdas = self.lambdas
+
         x = self.embedding(x)
-        x = self.layers(x)
+        
+        for i, layer in enumerate(self.layers):
+            # ve == first layer, we also pass it on to bottom 6 layers (layers 6-11)
+            x = layer(x, ve, lambdas[i])
         x = self.rmsn_f(x)
         x = self.lm_head(x)
         return x  # y
@@ -472,11 +470,13 @@ class MultiHeadAttention(nn.Module):
         else:
             self.rope = None
 
-    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None, value_embedding: torch.Tensor | None = None, lambdas: torch.Tensor | None = None) -> torch.Tensor:
         # We split the embedding dimension into an additional batch dimension (heads)
         Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
         K = rearrange(self.Wk(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
         V = rearrange(self.Wv(x), "b s (head d_v) -> b head s d_v", d_v=self.d_v)
+        value_embedding = rearrange(value_embedding, "b s (head d_v) -> b head s d_v", d_v=self.d_v)
+        V = lambdas[0] * V + lambdas[1] * value_embedding
 
         if self.rope != None:  # We are using RoPE
             if token_positions == None:  # create default 0, 1, .... positions if nothing else is supplied

@@ -168,7 +168,7 @@ def train(cfg: Config):
             token_per_s = chunk_steps * cfg.batch_size * cfg.context_length / (chunk_time)
             mfu = (flops_per_batch * cfg.log_interval / (chunk_time)) / max_flops if max_flops != float("inf") else None
             print(
-                f"step = {step} | Loss = {loss_accumulated:.3f} | s {chunk_time = :.2f} | tok/s = {token_per_s:,.1f} | lr = {new_lr:.5f} | MFU = {mfu}"
+                f"step = {step} | Loss = {loss_accumulated:.3f} | {chunk_time = :.2f} | tok/s = {token_per_s:,.1f} | lr = {new_lr:.5f} | MFU = {mfu}"
             )
 
             chunk_loss = 0
