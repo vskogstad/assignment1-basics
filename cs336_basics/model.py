@@ -4,6 +4,7 @@ import random
 import torch
 from einops import einsum, rearrange
 from torch import nn as nn
+import torch.nn.functional as F
 
 
 class Linear(nn.Module):
@@ -58,6 +59,8 @@ class Embedding(nn.Module):
         # Pluck out the position for each token_Id
         return self.embedding[token_ids]
 
+def norm(x: Tensor):
+    return F.rms_norm(x, (x.size(-1),))
 
 class RMSNorm(nn.Module):
     def __init__(
@@ -84,17 +87,10 @@ class SILU(nn.Module):
         super().__init__()
 
     def forward(self, x):
-        x = x * torch.sigmoid(x)
+        x = x / (1 + torch.exp(-x))
         return x
 
 
-class SILU2(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        x = x * 1 / (1 + torch.exp(-x))
-        return x
 
 
 class ReLU2(nn.Module):
@@ -102,8 +98,8 @@ class ReLU2(nn.Module):
         super().__init__()
 
     def forward(self, x):
-        torch.max(x, 0)
-        return x**2
+        torch.pow(torch.max(x, torch.zeros_like(x)))
+        return x
 
 
 class SWIGLU(nn.Module):
@@ -172,7 +168,7 @@ class Block(nn.Module):
     def forward(self, x: torch.Tensor):
         """Pre norm"""
         # Attention with prenorm and lns
-        x = x + 1 * self.mha(self.scaling * self.rmsn1(x))
+        x = x + self.mha(self.scaling * self.rmsn1(x))
         # SILU or SWIGLU FFN with prenorm and lns
         x = x + self.ffn(self.scaling * self.rmsn2(x))
         return x
@@ -481,6 +477,7 @@ class MultiHeadAttention(nn.Module):
         if self.rope != None:  # We are using RoPE
             if token_positions == None:  # create default 0, 1, .... positions if nothing else is supplied
                 token_positions = torch.arange(Q.shape[-2])  # Seems brittle
+            Q, K = norm(Q), norm(K)
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
 
