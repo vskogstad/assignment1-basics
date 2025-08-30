@@ -59,8 +59,6 @@ class Embedding(nn.Module):
         # Pluck out the position for each token_Id
         return self.embedding[token_ids]
 
-def norm(x: Tensor):
-    return F.rms_norm(x, (x.size(-1),))
 
 class RMSNorm(nn.Module):
     def __init__(
@@ -477,7 +475,6 @@ class MultiHeadAttention(nn.Module):
         if self.rope != None:  # We are using RoPE
             if token_positions == None:  # create default 0, 1, .... positions if nothing else is supplied
                 token_positions = torch.arange(Q.shape[-2])  # Seems brittle
-            Q, K = norm(Q), norm(K)
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
 

@@ -176,3 +176,4 @@ cython_debug/
 .ruff_cache/
 *.zip
 data/training_data/truncate_numpy.py
+NsightSystems-linux-cli-public-2025.3.1.90-3582212.deb
