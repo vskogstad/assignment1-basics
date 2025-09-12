@@ -303,10 +303,10 @@ def get_optimizer(cfg: Config, model):
     elif cfg.optimizer == "muon":
         optimizer = MuonWithAdamW(
             [
-                {"params": hidden_matrix_params, "weight_decay": cfg.weight_decay, "use_muon": True},
-                {"params": embed_params, "weight_decay": 0, "use_muon": False},
-                {"params": scalar_params, "weight_decay": 0, "use_muon": False},
-                {"params": head_params, "weight_decay": cfg.weight_decay, "use_muon": False},
+                {"params": hidden_matrix_params, "weight_decay": cfg.weight_decay, "use_muon": True, "lr_scale": 1},
+                {"params": embed_params, "weight_decay": 0, "use_muon": False, "lr_scale": 1},
+                {"params": scalar_params, "weight_decay": 0, "use_muon": False, "lr_scale": 1},
+                {"params": head_params, "weight_decay": cfg.weight_decay/3, "use_muon": False, "lr_scale": 1/3},
             ],
             # lr=cfg.max_learning_rate,
             momentum=cfg.muon_momentum,
@@ -563,7 +563,7 @@ class Muon(torch.optim.Optimizer):
         for group in self.param_groups:
             if not group["use_muon"]:
                 continue
-            lr = group["lr"]  # Get the learning rate.
+            lr = group["lr"] * group["lr_scale"] # Get the learning rate.
             momentum = group["momentum"]
             eps = group["eps"]
             weight_decay = group["weight_decay"]
