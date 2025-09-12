@@ -545,7 +545,7 @@ class GatedAttention(nn.Module):
         x3 = mha
 
         # cross product (GLU)
-        hidden = einsum(self.silu(x1), x3, "b s d_ff, b s d_ff-> b s d_ff")
+        hidden = self.silu(x1) * x3
         # project by to normal dimensions
         return self.Wo(hidden)
 
