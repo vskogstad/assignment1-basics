@@ -2,9 +2,9 @@ import math
 import random
 
 import torch
+import torch.nn.functional as F
 from einops import einsum, rearrange
 from torch import nn as nn
-import torch.nn.functional as F
 
 
 class Linear(nn.Module):
@@ -89,6 +89,13 @@ class SILU(nn.Module):
         return x
 
 
+class Sigmoid(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = 1 / (1 + torch.exp(-x))
+        return x
 
 
 class ReLU2(nn.Module):
@@ -485,7 +492,6 @@ class MultiHeadAttention(nn.Module):
         # import sys; sys.exit()
         return self.Wo(mha)
 
-        
 
 class GatedAttention(nn.Module):
     def __init__(
@@ -506,10 +512,11 @@ class GatedAttention(nn.Module):
         self.Wk = Linear(num_heads * self.d_k, d_model, device=device, dtype=dtype)
         self.Wv = Linear(num_heads * self.d_v, d_model, device=device, dtype=dtype)
         self.Wo = Linear(d_model, num_heads * self.d_v, device=device, dtype=dtype, set_zero=True)
-        self.w1 = Linear(in_features=d_model, out_features=d_model, device=device, dtype=dtype)
-        #self.w2 = Linear(in_features=d_ff, out_features=d_model, device=device, dtype=dtype, set_zero=True)
-        #self.w3 = Linear(in_features=d_model, out_features=d_ff, device=device, dtype=dtype)
-        self.silu = SILU()
+
+        self.head_gates = Linear(d_model, num_heads, device=device, dtype=dtype)
+        # self.w2 = Linear(in_features=d_ff, out_features=d_model, device=device, dtype=dtype, set_zero=True)
+        # self.w3 = Linear(in_features=d_model, out_features=d_ff, device=device, dtype=dtype)
+        self.sigmoid = Sigmoid()
         # self.heads = [Head(head_size=head_size, dim=d_k for _ in range(num_heads)]
         # self.register_buffer(name="tril", tensor=torch.tril(torch.ones((d_model,d_model))))
         if max_sequence_length is None:
@@ -537,17 +544,18 @@ class GatedAttention(nn.Module):
         # mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
         mha = scaled_dot_product_attention(Q, K, V, mask=self.tril)
         # rearrenge back into original embedding dimension
-        mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
-
+        
 
         # SwiGLU(x) = W2(SiLU(xW1) ⊙ xW3)
-        x1 = self.w1(x)
-        x3 = mha
+        head_gates = self.sigmoid(self.head_gates(x))
+        head_gates = rearrange(head_gates, "b s head -> b head s 1")
 
         # cross product (GLU)
-        hidden = self.silu(x1) * x3
+        hidden = head_gates * mha
+        hidden = rearrange(hidden, "b head s d_v -> b s (head d_v)")
         # project by to normal dimensions
         return self.Wo(hidden)
+
 
 class GroupedQueryAttention(nn.Module):
     """
