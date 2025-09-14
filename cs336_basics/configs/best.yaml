@@ -2,7 +2,7 @@
 model_name: "transformer"
 vocab_size: 32000 # 32768
 num_layers: 12
-num_heads: 8
+num_heads: 6
 d_model: 1536
 d_ff: 4096
 context_length: 512
