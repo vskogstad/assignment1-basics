@@ -6,6 +6,8 @@ import torch.nn.functional as F
 from einops import einsum, rearrange
 from torch import nn as nn
 
+def norm(x: torch.Tensor):
+    return F.rms_norm(x, (x.size(-1),))
 
 class Linear(nn.Module):
     def __init__(
@@ -603,6 +605,7 @@ class GatedAttention(nn.Module):
         if self.rope != None:  # We are using RoPE
             if token_positions == None:  # create default 0, 1, .... positions if nothing else is supplied
                 token_positions = torch.arange(Q.shape[-2])  # Seems brittle
+            Q, K = norm(Q), norm(K) # QK norm @Grad62304977, temporary test 15.09
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
 

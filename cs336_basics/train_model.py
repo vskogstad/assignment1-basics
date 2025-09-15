@@ -20,24 +20,12 @@ from cs336_basics.model import Transformer
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.utils import resource_accounting, step_law_lr
 
-# Test the optimization with pytorch matrix-sizes.
+# Test the optimization with pytorch matrix-sizes. (options max_autotune)
 # x Test scaling ln with depth     https://arxiv.org/pdf/2502.05795
 # x Test corrected optimal batch-size and learning rate.
 # x  Grouped query attention.
-# speed up loss calculation (triton kernel?)
-# KV-cache.
-# Perplexity measurement.
-"""
-his improvement in training speed has been brought about by the following techniques:
 
-    Modernized architecture: Rotary embeddings, QK-Norm, and ReLU²
-    x The Muon optimizer [writeup] [repo]
-    Untie head from embedding, use FP8 matmul for head, and softcap logits (the latter following Gemma 2)
-    x Initialization of projection and classification layers to zero (muP-like)
-    Skip connections from embedding to every block as well as between blocks in U-net pattern
-    Extra embeddings which are mixed into the values in attention layers (inspired by Zhou et al. 2024)
-    FlexAttention with long-short sliding window attention pattern (inspired by Gemma 2) and window size warmup
-"""
+# Perplexity measurement.
 
 
 def train(cfg: Config):
@@ -57,6 +45,12 @@ def train(cfg: Config):
 
     #
     if torch.cuda.is_available():
+        # Clear GPU cache between runs
+        torch.cuda.empty_cache()
+
+        # Set CUDA memory allocation strategy
+        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+
         if cfg.dtype == "bfloat16":
             max_flops = 989e12  # BF16 Tensor Core without sparsity.
         else:
