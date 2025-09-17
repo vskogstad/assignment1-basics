@@ -102,8 +102,8 @@ class RMSNorm(nn.Module):
         in_dtype = x.dtype
         x = x.to(torch.float32)
         # RMS NormRMS
-        rootmeansquared = torch.sqrt((1 / self.d_model) * torch.sum(x**2, dim=-1, keepdim=True) + self.eps)
-        x = x * self.weights / rootmeansquared
+        norm_factor = torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + self.eps)
+        x = x * self.weights * norm_factor
         # convert back to original dtype
         return x.to(in_dtype)
 
