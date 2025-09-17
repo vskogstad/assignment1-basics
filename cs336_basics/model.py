@@ -190,13 +190,13 @@ class Block(nn.Module):
                 device=device,
                 dtype=dtype,
             )
-        self.rmsn1 = RMSNorm(d_model=d_model, eps=torch.finfo(torch.float32).eps, device=device)
+        self.rmsn1 = RMSNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device)
         self.scaling = depth**-0.5
         if glu:
             self.ffn = SWIGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
         else:
             self.ffn = SILU()
-        self.rmsn2 = RMSNorm(d_model=d_model, eps=torch.finfo(torch.float32).eps, device=device)
+        self.rmsn2 = RMSNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device)
 
     def forward(self, x: torch.Tensor):
         """Pre norm"""
@@ -260,9 +260,7 @@ class NoLayerNormBlock(nn.Module):
             device=device,
             dtype=dtype,
         )
-        # self.rmsn1 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
         self.ffn = SWIGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
-        # self.rmsn2 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
 
     def forward(self, x: torch.Tensor):
         """Post norm"""
@@ -308,7 +306,7 @@ class Transformer(nn.Module):
                 for i in range(num_layers)
             ]
         )
-        self.rmsn_f = RMSNorm(d_model=d_model, eps=1e-5, device=device, dtype=dtype)
+        self.rmsn_f = RMSNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device, dtype=dtype)
         self.lm_head = Linear(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype, set_zero=True)
         self.device = device
 
@@ -317,7 +315,7 @@ class Transformer(nn.Module):
         x = self.layers(x)
         x = self.rmsn_f(x)
         x = self.lm_head(x)
-        return x  # y
+        return x 
 
     def get_block_module(self, glu, pre_norm, layer_norm):
         if glu + pre_norm + layer_norm < 2:  # All of these are true by default, we just set one of them false at a time
@@ -607,8 +605,8 @@ class GatedAttention(nn.Module):
         self.Wv = Linear(num_heads * self.d_v, d_model, device=device, dtype=dtype)
         self.Wo = Linear(d_model, num_heads * self.d_v, device=device, dtype=dtype, set_zero=True)
         self.w1 = Linear(in_features=d_model, out_features=d_model, device=device, dtype=dtype)
-        self.q_norm = RMSNorm(d_model=self.d_k, eps=torch.finfo(torch.float32).eps, device=device, dtype=dtype)
-        self.k_norm = RMSNorm(d_model=self.d_k, eps=torch.finfo(torch.float32).eps, device=device, dtype=dtype)
+        self.q_norm = RMSNorm(d_model=self.d_k, eps=torch.finfo(torch.bfloat16).eps, device=device, dtype=dtype)
+        self.k_norm = RMSNorm(d_model=self.d_k, eps=torch.finfo(torch.bfloat16).eps, device=device, dtype=dtype)
         #self.w2 = Linear(in_features=d_ff, out_features=d_model, device=device, dtype=dtype, set_zero=True)
         #self.w3 = Linear(in_features=d_model, out_features=d_ff, device=device, dtype=dtype)
         self.silu = SILU()
