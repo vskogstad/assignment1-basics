@@ -9,6 +9,32 @@ from torch import nn as nn
 def norm(x: torch.Tensor):
     return F.rms_norm(x, (x.size(-1),))
 
+def norm2(x: torch.Tensor):
+    """Implemenation that replaces F.rms_norm
+
+    class RMSNorm(nn.Module):
+    def __init__(
+        self, d_model: int, eps: float = 1e-5, device: torch.device | None = None, dtype: torch.dtype | None = None
+    ):
+        super().__init__()
+        self.eps = eps
+        self.weights = nn.Parameter(torch.ones(d_model, dtype=torch.float32, device=device))
+        self.d_model = d_model
+
+    def forward(self, x: torch.Tensor):
+        # convert from incoming dtype to float32 (If mixed precision training)
+        in_dtype = x.dtype
+        x = x.to(torch.float32)
+        # RMS NormRMS
+        rootmeansquared = torch.sqrt((1 / self.d_model) * torch.sum(x**2, dim=-1, keepdim=True) + self.eps)
+        x = x * self.weights / rootmeansquared
+        # convert back to original dtype
+        return x.to(in_dtype)
+    
+    """
+    return RMSNorm(d_model = x.size(-1),)
+    
+
 class Linear(nn.Module):
     def __init__(
         self,
@@ -164,13 +190,13 @@ class Block(nn.Module):
                 device=device,
                 dtype=dtype,
             )
-        self.rmsn1 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
+        self.rmsn1 = RMSNorm(d_model=d_model, eps=torch.finfo(torch.float32).eps, device=device)
         self.scaling = depth**-0.5
         if glu:
             self.ffn = SWIGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
         else:
             self.ffn = SILU()
-        self.rmsn2 = RMSNorm(d_model=d_model, eps=1e-5, device=device)
+        self.rmsn2 = RMSNorm(d_model=d_model, eps=torch.finfo(torch.float32).eps, device=device)
 
     def forward(self, x: torch.Tensor):
         """Pre norm"""
@@ -581,6 +607,8 @@ class GatedAttention(nn.Module):
         self.Wv = Linear(num_heads * self.d_v, d_model, device=device, dtype=dtype)
         self.Wo = Linear(d_model, num_heads * self.d_v, device=device, dtype=dtype, set_zero=True)
         self.w1 = Linear(in_features=d_model, out_features=d_model, device=device, dtype=dtype)
+        self.q_norm = RMSNorm(d_model=self.d_k, eps=torch.finfo(torch.float32).eps, device=device, dtype=dtype)
+        self.k_norm = RMSNorm(d_model=self.d_k, eps=torch.finfo(torch.float32).eps, device=device, dtype=dtype)
         #self.w2 = Linear(in_features=d_ff, out_features=d_model, device=device, dtype=dtype, set_zero=True)
         #self.w3 = Linear(in_features=d_model, out_features=d_ff, device=device, dtype=dtype)
         self.silu = SILU()
@@ -605,7 +633,7 @@ class GatedAttention(nn.Module):
         if self.rope != None:  # We are using RoPE
             if token_positions == None:  # create default 0, 1, .... positions if nothing else is supplied
                 token_positions = torch.arange(Q.shape[-2])  # Seems brittle
-            Q, K = norm(Q), norm(K) # QK norm @Grad62304977, temporary test 15.09
+            Q, K = self.q_norm(Q), self.k_norm(K) # QK norm. own variant of speedrun implementation from @Grad62304977
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
 

@@ -20,10 +20,14 @@ from cs336_basics.model import Transformer
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.utils import resource_accounting, step_law_lr
 
-# Test the optimization with pytorch matrix-sizes. (options max_autotune)
+# Done
+# x Test the optimization with pytorch matrix-sizes. (options max_autotune) (MFU A bit higher, but don't make up the time spent optimizing)
 # x Test scaling ln with depth     https://arxiv.org/pdf/2502.05795
 # x Test corrected optimal batch-size and learning rate.
-# x  Grouped query attention.
+# x Grouped query attention.
+# x Gated attention
+# TODO
+# Scaling with sqrt(2 * depth) like in Ernie
 
 # Perplexity measurement.
 
@@ -49,7 +53,8 @@ def train(cfg: Config):
         torch.cuda.empty_cache()
 
         # Set CUDA memory allocation strategy
-        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:128'
+        #os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
         if cfg.dtype == "bfloat16":
             max_flops = 989e12  # BF16 Tensor Core without sparsity.
@@ -203,6 +208,8 @@ def train(cfg: Config):
     if cfg.wandb_project:
         run.finish()
     print(f"Total time {timeit.default_timer() - t_start:3f} seconds spent.")
+
+
 
 
 def calculate_loss(model, data, cfg, current_tokens, device, rng=None):

@@ -23,12 +23,12 @@ tokenizer_merges_path: "data/tokenizer_data/merges_owt_train.pkl"
 dtype: bfloat16
 batch_size: 128
 min_learning_rate: 1.0e-5
-max_learning_rate: 0.0070
+max_learning_rate: 0.0050
 weight_decay: 0.1
 warmup_steps: 600
 total_steps: 10501
 cosine_cycle_steps: 10501
-betas: [0.9, 0.95]
+betas: [0.9, 0.999]
 eps: 1.0e-8
 muon_momentum: 0.95
 grad_clip_norm: 1.0
