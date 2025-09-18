@@ -623,7 +623,6 @@ class GatedAttention(nn.Module):
             max_sequence_length = (
                 d_model  # set it to some slightly large number to pass tests, should be using max_sequence length.
             )
-        print(depth)
         self.register_buffer("attention_mask", self.create_depth_specific_attention_mask(depth, max_sequence_length, device, dtype))
         if theta is not None:
             self.rope = RoPE(theta=theta, d_k=self.d_k, max_sequence_length=max_sequence_length, device=device)
@@ -638,13 +637,37 @@ class GatedAttention(nn.Module):
             return create_sliding_window_mask(seq_len=seq_len, window_size=seq_len, device=device, dtype=dtype)
         else:
             #return torch.tril(torch.ones((seq_len, seq_len), device=device, dtype=dtype))
-            return create_sliding_window_mask(seq_len=seq_len, window_size=256, device=device, dtype=dtype)
+            return create_sliding_window_mask(seq_len=seq_len, window_size=seq_len, device=device, dtype=dtype)
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
         # We split the embedding dimension into an additional batch dimension (heads)
         Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
         K = rearrange(self.Wk(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
         V = rearrange(self.Wv(x), "b s (head d_v) -> b head s d_v", d_v=self.d_v)
+
+        
+        batch_size, _, seq_len, _ = Q.shape
+        
+        if input_ids is not None and self.use_document_masking:
+            # Find document boundaries
+            doc_ids = (input_ids == self.eot_token_id).cumsum(dim=1)
+            
+            # Create mask: same document check
+            same_doc = doc_ids.unsqueeze(2) == doc_ids.unsqueeze(1)  # [batch, seq, seq]
+            
+            # Combine with causal mask (your existing tril)
+            causal_mask = self.tril[:seq_len, :seq_len]
+            
+            # Final mask: both causal AND same document
+            mask = same_doc & causal_mask.unsqueeze(0)
+            
+            # Convert to attention format
+            mask = mask.unsqueeze(1)  # Add head dimension
+            attention_mask = mask
+        else:
+        # Use your existing mask
+        attention_mask = torch.where(self.tril[:seq_len, :seq_len], 0., float('-inf'))
+    
 
         if self.rope != None:  # We are using RoPE
             if token_positions == None:  # create default 0, 1, .... positions if nothing else is supplied

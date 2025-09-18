@@ -220,13 +220,14 @@ class Tokenizer:
 if __name__ == "__main__":
     special_tokens = ["<|imstart|>", "<|endoftext|>"]
     tokenizer = Tokenizer.from_files(
-        vocab_filepath="data/tokenizer_data/vocab_TinyStories-train.pkl",
-        merges_filepath="data/tokenizer_data/merges_TinyStories-train.pkl",
+        vocab_filepath="data/tokenizer_data/vocab_owt_train.pkl",
+        merges_filepath="data/tokenizer_data/merges_owt_train.pkl",
         special_tokens=special_tokens,
     )
     print(type(tokenizer.vocab), type(tokenizer.merges))
-    enc = tokenizer.encode("Lets test how lucky we can get")
+    enc = tokenizer.encode("Lets test how lucky we can get <|endoftext|><|endoftext|>")
     print(enc)
+    import sys; sys.exit()
     dec = tokenizer.decode(enc)
     print(dec)
     #tokenizer.throughput(filename="data/owt_valid.txt", tokenizer=tokenizer)
