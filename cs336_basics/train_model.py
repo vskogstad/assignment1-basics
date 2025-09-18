@@ -26,9 +26,9 @@ from cs336_basics.utils import resource_accounting, step_law_lr
 # x Test corrected optimal batch-size and learning rate.
 # x Grouped query attention.
 # x Gated attention
+# x Scaling with sqrt(2 * depth) like in Ernie
 # TODO
-# Scaling with sqrt(2 * depth) like in Ernie
-
+# sliding window attention
 # Perplexity measurement.
 
 

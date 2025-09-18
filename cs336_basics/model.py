@@ -185,6 +185,7 @@ class Block(nn.Module):
             self.mha = GatedAttention(
                 d_model=d_model,
                 num_heads=num_heads,
+                depth= depth,
                 max_sequence_length=max_sequence_length,
                 theta=theta,
                 device=device,
@@ -583,17 +584,23 @@ class GatedHeadwiseAttention(nn.Module):
         return self.Wo(hidden)
 
 
-
+def create_sliding_window_mask(seq_len: int, window_size: int, device, dtype):
+    mask = torch.ones((seq_len, seq_len), device=device, dtype=dtype)
+    mask = torch.triu(mask, diagonal = 1 - window_size)
+    mask = torch.tril(mask)
+    return mask
 
 class GatedAttention(nn.Module):
     def __init__(
         self,
         d_model: int,
         num_heads: int,
+        depth: int,
         max_sequence_length: int | None = None,
         theta: float | None = None,
         dtype: torch.dtype | None = None,
         device: torch.device | None = None,
+        
     ):
         super().__init__()
         self.num_heads = num_heads
@@ -616,11 +623,22 @@ class GatedAttention(nn.Module):
             max_sequence_length = (
                 d_model  # set it to some slightly large number to pass tests, should be using max_sequence length.
             )
-        self.tril = torch.tril(torch.ones((max_sequence_length, max_sequence_length), device=device, dtype=dtype))
+        print(depth)
+        self.register_buffer("attention_mask", self.create_depth_specific_attention_mask(depth, max_sequence_length, device, dtype))
         if theta is not None:
             self.rope = RoPE(theta=theta, d_k=self.d_k, max_sequence_length=max_sequence_length, device=device)
         else:
             self.rope = None
+
+    def create_depth_specific_attention_mask(self, depth, seq_len, device, dtype):
+        """Every n layer we do full attention"""
+
+        if depth % 4 == 0:
+            #return torch.tril(torch.ones((seq_len, seq_len), device=device, dtype=dtype))
+            return create_sliding_window_mask(seq_len=seq_len, window_size=seq_len, device=device, dtype=dtype)
+        else:
+            #return torch.tril(torch.ones((seq_len, seq_len), device=device, dtype=dtype))
+            return create_sliding_window_mask(seq_len=seq_len, window_size=256, device=device, dtype=dtype)
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
         # We split the embedding dimension into an additional batch dimension (heads)
@@ -636,7 +654,7 @@ class GatedAttention(nn.Module):
             K = self.rope(K, token_positions)
 
         # mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
-        mha = scaled_dot_product_attention(Q, K, V, mask=self.tril)
+        mha = scaled_dot_product_attention(Q, K, V, mask=self.attention_mask)
         # rearrenge back into original embedding dimension
         mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
         
