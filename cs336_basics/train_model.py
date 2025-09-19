@@ -608,7 +608,6 @@ class MuonWithAdamW(torch.optim.Optimizer):
         super().__init__(params, defaults)
 
 
-    @torch.compile(fullgraph=True)
     @torch.no_grad()
     def step(self, closure: Optional[Callable] = None):
         loss = None if closure is None else closure()
@@ -667,7 +666,7 @@ class MuonWithAdamW(torch.optim.Optimizer):
 
         return loss
 
-@torch.compile(fullgraph=True)
+@torch.compile()
 def newtonschulz5(G, steps=5, eps=1e-7):
     """From https://kellerjordan.github.io/posts/muon/"""
     assert G.ndim == 2
@@ -684,7 +683,7 @@ def newtonschulz5(G, steps=5, eps=1e-7):
         X = X.T
     return X
 
-@torch.compile()
+#@torch.compile()
 def get_lr_cosine(
     step: int, max_learning_rate: float, min_learning_rate: float, warmup_steps: int, cosine_cycle_steps: int
 ):

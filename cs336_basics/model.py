@@ -618,27 +618,7 @@ class GatedAttention(nn.Module):
         V = rearrange(self.Wv(x), "b s (head d_v) -> b head s d_v", d_v=self.d_v)
 
         
-        batch_size, _, seq_len, _ = Q.shape
         
-        if input_ids is not None and self.use_document_masking:
-            # Find document boundaries
-            doc_ids = (input_ids == self.eot_token_id).cumsum(dim=1)
-            
-            # Create mask: same document check
-            same_doc = doc_ids.unsqueeze(2) == doc_ids.unsqueeze(1)  # [batch, seq, seq]
-            
-            # Combine with causal mask (your existing tril)
-            causal_mask = self.tril[:seq_len, :seq_len]
-            
-            # Final mask: both causal AND same document
-            mask = same_doc & causal_mask.unsqueeze(0)
-            
-            # Convert to attention format
-            mask = mask.unsqueeze(1)  # Add head dimension
-            attention_mask = mask
-        else:
-        # Use your existing mask
-        attention_mask = torch.where(self.tril[:seq_len, :seq_len], 0., float('-inf'))
     
 
         if self.rope != None:  # We are using RoPE
