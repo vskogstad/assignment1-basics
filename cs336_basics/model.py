@@ -263,8 +263,8 @@ class Transformer(nn.Module):
         block_module = self.get_block_module(
             glu, pre_norm, layer_norm
         )  # For ablations, created separate modules to avoid branching in forward.
-        self.layers = nn.Sequential(
-            *[
+        self.layers = nn.ModuleList(
+            [
                 block_module(
                     d_model=d_model,
                     num_heads=num_heads,
@@ -282,12 +282,25 @@ class Transformer(nn.Module):
         self.rmsn_f = RMSNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device, dtype=dtype)
         self.lm_head = Linear(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype, set_zero=True)
         self.device = device
+        self.skip = nn.Parameter(torch.ones(num_layers // 2, 2, device=device) )
 
     def forward(self, x: torch.Tensor):
         x = self.embedding(x)
-        x = self.layers(x)
+
+        # U-net from NanoGPT speedrun:
+        mid = len(self.layers) // 2
+        skip_connections = []
+        skip_weights = self.skip
+        for i in range(len(self.layers)):
+            if i >= mid:
+                x = x + skip_weights[i-mid] * skip_connections.pop()
+            x = self.layers[i](x)
+            if i < mid: # after x = self.layers to add skip connection from output of block
+                skip_connections.append(x)
+
         x = self.rmsn_f(x)
         x = self.lm_head(x)
+
         return x 
 
     def get_block_module(self, glu, pre_norm, layer_norm):
