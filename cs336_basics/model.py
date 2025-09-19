@@ -6,34 +6,6 @@ import torch.nn.functional as F
 from einops import einsum, rearrange
 from torch import nn as nn
 
-def norm(x: torch.Tensor):
-    return F.rms_norm(x, (x.size(-1),))
-
-def norm2(x: torch.Tensor):
-    """Implemenation that replaces F.rms_norm
-
-    class RMSNorm(nn.Module):
-    def __init__(
-        self, d_model: int, eps: float = 1e-5, device: torch.device | None = None, dtype: torch.dtype | None = None
-    ):
-        super().__init__()
-        self.eps = eps
-        self.weights = nn.Parameter(torch.ones(d_model, dtype=torch.float32, device=device))
-        self.d_model = d_model
-
-    def forward(self, x: torch.Tensor):
-        # convert from incoming dtype to float32 (If mixed precision training)
-        in_dtype = x.dtype
-        x = x.to(torch.float32)
-        # RMS NormRMS
-        rootmeansquared = torch.sqrt((1 / self.d_model) * torch.sum(x**2, dim=-1, keepdim=True) + self.eps)
-        x = x * self.weights / rootmeansquared
-        # convert back to original dtype
-        return x.to(in_dtype)
-    
-    """
-    return RMSNorm(d_model = x.size(-1),)
-    
 
 class Linear(nn.Module):
     def __init__(

@@ -589,7 +589,7 @@ class Muon(torch.optim.Optimizer):
         return loss
 
 
-@torch.compile(fullgraph=True)
+
 class MuonWithAdamW(torch.optim.Optimizer):
     """
     Uses the modified Muon with transfer of LR parameters from adamw using the following formula:
@@ -607,6 +607,9 @@ class MuonWithAdamW(torch.optim.Optimizer):
         defaults = {"lr": lr, "eps": eps, "momentum": momentum, "weight_decay": weight_decay, "betas": betas}
         super().__init__(params, defaults)
 
+
+    @torch.compile(fullgraph=True)
+    @torch.no_grad()
     def step(self, closure: Optional[Callable] = None):
         loss = None if closure is None else closure()
 
@@ -664,7 +667,7 @@ class MuonWithAdamW(torch.optim.Optimizer):
 
         return loss
 
-
+@torch.compile(fullgraph=True)
 def newtonschulz5(G, steps=5, eps=1e-7):
     """From https://kellerjordan.github.io/posts/muon/"""
     assert G.ndim == 2
@@ -681,7 +684,7 @@ def newtonschulz5(G, steps=5, eps=1e-7):
         X = X.T
     return X
 
-
+@torch.compile()
 def get_lr_cosine(
     step: int, max_learning_rate: float, min_learning_rate: float, warmup_steps: int, cosine_cycle_steps: int
 ):
@@ -696,7 +699,7 @@ def get_lr_cosine(
 
     return lr
 
-
+@torch.compile()
 def clip_gradient(parameters, max_l2_norm: float):
     """Finds the size of the l2-norm, if higher than the max, we scale down."""
     eps = 1e-6
