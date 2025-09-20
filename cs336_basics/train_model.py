@@ -6,10 +6,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import asdict
 from typing import IO, BinaryIO, Optional
 
-# from einops import einsum, rearrange
 import numpy as np
 import torch
-import torch.nn.functional as F
 from einops import einsum, rearrange
 from torch import nn as nn
 from torch.profiler import ProfilerActivity, profile, record_function
@@ -27,8 +25,8 @@ from cs336_basics.utils import resource_accounting, step_law_lr
 # x Grouped query attention.
 # x Gated attention
 # x Scaling with sqrt(2 * depth) like in Ernie
+# x sliding window attention
 # TODO
-# sliding window attention
 # Perplexity measurement.
 
 
@@ -47,14 +45,11 @@ def train(cfg: Config):
     torch.set_float32_matmul_precision("high")  # Improved speed
     # torch.autograd.set_detect_anomaly(True) # for bughunting
 
-    #
     if torch.cuda.is_available():
         # Clear GPU cache between runs
         torch.cuda.empty_cache()
-
-        # Set CUDA memory allocation strategy
+        # Set CUDA memory allocation strategy (Neccessary to avoid OOM issues)
         os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:128'
-        #os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
         if cfg.dtype == "bfloat16":
             max_flops = 989e12  # BF16 Tensor Core without sparsity.
@@ -71,12 +66,12 @@ def train(cfg: Config):
     flops_per_batch, non_embedding_params = resource_accounting(cfg)  # Print info about the current run to the log
     step_law_lr(
         len_data=140_000 * 5200, non_embedding_params=non_embedding_params, context_length=cfg.context_length
-    )  # For our specific task use fixed len_data
+    )  # ~140 000 tokens/sec, 5200 secs available (200 for loading model and compilation)
 
     # Load model, optimizer and scheduler
     model = (
         get_model(cfg, device) if device == torch.device("cpu") else torch.compile(get_model(cfg, device))
-    )  # , fullgraph=True)
+    ) 
     optimizer = get_optimizer(cfg=cfg, model=model)
 
     assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
@@ -92,7 +87,8 @@ def train(cfg: Config):
     )
     # We use randomized unrepeated data if we have enough available, break out if not
     assert(len(train_data) // (cfg.context_length * cfg.batch_size) > cfg.total_steps)
-    # "Multi-epoch training not implemented"
+    
+    # TODO: Multi-epoch training not implemented
     max_idx = len(train_data) // (cfg.context_length)
     starts = np.arange(max_idx) * cfg.context_length
     rng.shuffle(starts)
@@ -107,8 +103,6 @@ def train(cfg: Config):
     current_tokens = 0
     chunk_steps = 0
     chunk_loss = 0
-
-
 
     # Load from checkpoint
     if cfg.from_checkpoint:
@@ -239,12 +233,12 @@ def calculate_loss(model, data, cfg, current_tokens, device, rng=None):
 
 def monitor_norms(model, step, y_pred):
     print(f"\n=== Step {step} Weight Analysis ===")
-    # 1. Embedding weights
+    # Embedding weights
     emb_std = model.embedding.embedding.std().item()
     emb_max = model.embedding.embedding.abs().max().item()
     print(f"Embedding: std={emb_std:.4f}, max={emb_max:.4f}")
 
-    # 2. Attention weights (first few layers)
+    # Attention weights (first few layers)
     for i in range(min(3, len(model.layers))):
         layer = model.layers[i]
         # Check attention projection weights
@@ -255,19 +249,19 @@ def monitor_norms(model, step, y_pred):
 
                 print(f"Layer {i} MHA {name}: std={std:.4f}, max={max_val:.4f}")
 
-        # Check FFN weights
+        # FFN weights
         for name, param in layer.ffn.named_parameters():
             if "w" in name:
                 std = param.std().item()
                 max_val = param.abs().max().item()
                 print(f"Layer {i} FFN {name}: std={std:.4f}, max={max_val:.4f}")
 
-    # 3. Output head
+    # Output head
     head_std = model.lm_head.W.std().item()
     head_max = model.lm_head.W.abs().max().item()
     print(f"LM Head: std={head_std:.4f}, max={head_max:.4f}")
 
-    # 4. Current output variance
+    # Current output variance
     print(f"Y_pred range: [{y_pred.min().item():.3f}, {y_pred.max().item():.3f}]")
 
     # Calculate l2_norm

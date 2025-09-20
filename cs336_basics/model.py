@@ -73,7 +73,7 @@ class RMSNorm(nn.Module):
         # convert from incoming dtype to float32 (If mixed precision training)
         in_dtype = x.dtype
         x = x.to(torch.float32)
-        # RMS NormRMS
+        # RMS Norm
         norm_factor = torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + self.eps)
         x = x * self.weights * norm_factor
         # convert back to original dtype
@@ -615,7 +615,10 @@ class GatedAttention(nn.Module):
             self.rope = None
 
     def create_depth_specific_attention_mask(self, depth, seq_len, device, dtype):
-        """Every n layer we do full attention"""
+        """
+        Idea: Sliding window most layers. Every 4th layer we do full attention.
+        Practice: Right now it just does full attention for every layer.
+        """
 
         if depth % 4 == 0:
             #return torch.tril(torch.ones((seq_len, seq_len), device=device, dtype=dtype))
@@ -629,10 +632,6 @@ class GatedAttention(nn.Module):
         Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
         K = rearrange(self.Wk(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
         V = rearrange(self.Wv(x), "b s (head d_v) -> b head s d_v", d_v=self.d_v)
-
-        
-        
-    
 
         if self.rope != None:  # We are using RoPE
             if token_positions == None:  # create default 0, 1, .... positions if nothing else is supplied
