@@ -65,8 +65,19 @@ class Config:
         return cls(**data)
 
     def save(self, filepath: str):
+        config_dict = asdict(self)
+        
+        # Handle torch dtype objects
+        if 'dtype' in config_dict:
+            dtype_value = config_dict['dtype']
+            if hasattr(dtype_value, '__module__') and 'torch' in str(dtype_value.__module__):
+                # Convert torch dtype back to string
+                config_dict['dtype'] = str(dtype_value).split('.')[-1]  # torch.bfloat16 -> bfloat16
+            elif hasattr(dtype_value, '__name__'):
+                config_dict['dtype'] = dtype_value.__name__
+        
         with open(file=filepath, mode="w") as f:
-            yaml.dump(asdict(self), f, default_flow_style=False)
+            yaml.dump(config_dict, f, default_flow_style=False)
 
     def update_from_args(self, args):
         for command, value in vars(args).items():

@@ -282,7 +282,7 @@ class Transformer(nn.Module):
         self.rmsn_f = RMSNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device, dtype=dtype)
         self.lm_head = Linear(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype, set_zero=True)
         self.device = device
-        self.skip = nn.Parameter(torch.ones(num_layers // 2, 2, device=device) )
+        self.skip = nn.Parameter(torch.ones(num_layers // 2, device=device) )
 
     def forward(self, x: torch.Tensor):
         x = self.embedding(x)

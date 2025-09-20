@@ -16,3 +16,6 @@ if __name__ == "__main__":
             print(f"no {file}")
             download_training_file(file, link)
     train(cfg=config)
+    # Save final config to experiment directory
+    os.makedirs(config.output_dir, exist_ok=True)
+    config.save(os.path.join(config.output_dir, f"{config.experiment_name}_config.yaml"))

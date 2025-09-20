@@ -93,7 +93,6 @@ def train(cfg: Config):
     starts = np.arange(max_idx) * cfg.context_length
     rng.shuffle(starts)
     starts = starts[:cfg.total_steps * cfg.batch_size].reshape(-1, cfg.batch_size)
-    print(starts)
 
     # Initialize logging
     if cfg.wandb_project:
@@ -106,7 +105,7 @@ def train(cfg: Config):
 
     # Load from checkpoint
     if cfg.from_checkpoint:
-        source = os.path.join(cfg.output_dir, "checkpoints", cfg.from_checkpoint)
+        source = os.path.join(cfg.output_dir, cfg.from_checkpoint)
         step = (
             load_checkpoint(src=source, model=model, optimizer=optimizer) + 1
         )  # increment by one, this step has already been done
@@ -196,7 +195,7 @@ def train(cfg: Config):
                 model=model,
                 optimizer=optimizer,
                 iteration=step,
-                out=f"{cfg.output_dir}/checkpoints/{cfg.experiment_name}_{step}.pth",
+                out=f"{cfg.output_dir}/{cfg.experiment_name}_{step}.pth",
             )
 
     if cfg.wandb_project:
@@ -749,6 +748,15 @@ if __name__ == "__main__":
     # load config
     config = Config.from_yaml(args.config)
     config.update_from_args(args)
+    sample_from_model_checkpoint(
+        model_path="cs336_basics/configs/experiments/U-net_learnable_10.pth",
+        cfg=config,
+        num_samples=10,
+        prompt="Once upon a time",
+    )
+    import sys
+
+    sys.exit()
 
     # Save final config to experiment directory
     os.makedirs(config.output_dir, exist_ok=True)
@@ -762,8 +770,11 @@ if __name__ == "__main__":
     sys.exit()
     # Sampling snippet
     sample_from_model_checkpoint(
-        model_path="cs336_basics/configs/experiments/checkpoints/Lr24_10500.pth",
+        model_path="cs336_basics/configs/experiments/U-net_learnable_10.pth",
         cfg=config,
         num_samples=10,
         prompt="Once upon a time",
     )
+    import sys
+
+    sys.exit()
