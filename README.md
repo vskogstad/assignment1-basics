@@ -13,21 +13,21 @@ The model and training script is now a bit messy as I've tried to make it as eff
 
 [Final training run](https://api.wandb.ai/links/skogstadv-hobbyist/q4d1kri6)
 
-Validation loss of 3.0762 over entire validation set after 10500 steps and 85 minutes of training. 
-
-[Leaderboard](https://github.com/stanford-cs336/assignment1-basics-leaderboard?tab=readme-ov-file#openwebtext-subsample-validation-loss-leaderboard)
+Validation loss of 3.0762 over entire validation set after 10500 steps and 85 minutes of training. [Leaderboard](https://github.com/stanford-cs336/assignment1-basics-leaderboard?tab=readme-ov-file#openwebtext-subsample-validation-loss-leaderboard)  
 
 **Initial Architecture**
-Used mixed precision with bfloat16.  
-Initialization of projection and classification layers to zero (Like in NanoGPT-speedruns).  
-Muon with AdamW optimizer. Using same learning rate for both optimizers, and scaling Muon LR following: https://arxiv.org/abs/2502.16982  
-Layer norm scaling. https://arxiv.org/pdf/2502.05795  
+
+-Used mixed precision with bfloat16.  
+-Initialization of projection and classification layers to zero (Like in NanoGPT-speedruns).  
+-Muon with AdamW optimizer. Using same learning rate for both optimizers, and scaling Muon LR following: https://arxiv.org/abs/2502.16982  
+-Layer norm scaling. https://arxiv.org/pdf/2502.05795  
 
 Used step_law optimal learning rate/batch size as a starting point. https://arxiv.org/html/2503.04715v6  
 Scaled up model size to fit within memory while using optimal batch-size. Adjusted model dimensions to get as high MFU as possible. (Meaning prioritize wide matrix-operations over my slow attention implementation and using just 8 attention heads). Ended up going with a lower MFU architecture in the end as it outperformed larger wider models.  
 Incrementally increased lr from "optimal lr" until I felt I had spent too much on GPU rental. Final learning rate is 10x step_law optimal, so I am probably doing something wrong in my calculations, or our data sets are very different.  
 
 **Improvements**
+
 -Changed the data-loader from random, to randomized strided sampling without replacement. More unique training samples gave increased training loss(no repetitions) but brought the validation loss down to 3.126.  
 -Implemented gated attention (Sort of like in qwen next, but I do full gates instead of per head and use SILU instead of sigmoid). Changed to just 6 attention heads, which is a bit worse but gives higher MFU. In sum this brought validation loss down to 3.1035. https://arxiv.org/pdf/2505.06708  
 -QK-norm -> 3.094  
@@ -35,6 +35,7 @@ Incrementally increased lr from "optimal lr" until I felt I had spent too much o
 -U-net architecture with learnable params. -> 3.0762  
 
 **Attempts**
+
 -Lowering the LR for the LM-head layer as recommended in Dion. NanoGPT seems to be doing it the other way around? Gave very minimal improvements. https://arxiv.org/pdf/2504.05295  
 -Document masking. Lower MFU and very slight performance decrease. I really expected this to work a lot better.  
 -Sliding window attention. Hybrid with 3 layers sliding window 1 full layer is only slightly worse, but no speedup.  
