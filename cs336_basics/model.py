@@ -171,10 +171,10 @@ class Block(nn.Module):
             self.ffn = SILU()
         self.rmsn2 = RMSNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device)
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, ve: torch.Tensor, lambdas):
         """Pre norm"""
         # Attention with prenorm and lns
-        x = x + self.mha(self.scaling * self.rmsn1(x))
+        x = x + self.mha(self.scaling * self.rmsn1(x), None, ve, lambdas)
         # SILU or SWIGLU FFN with prenorm and lns
         x = x + self.ffn(self.scaling * self.rmsn2(x))
         return x
@@ -260,6 +260,9 @@ class Transformer(nn.Module):
     ):
         super().__init__()
         self.embedding = Embedding(num_embeddings=vocab_size, embeddings_dim=d_model, device=device, dtype=dtype)
+        self.value_embedding = Embedding(num_embeddings=vocab_size, embeddings_dim=d_model, device=device, dtype=dtype)
+        self.lambdas = nn.Parameter(torch.ones(num_layers, 2, device=device) * 0.5)
+
         block_module = self.get_block_module(
             glu, pre_norm, layer_norm
         )  # For ablations, created separate modules to avoid branching in forward.
@@ -285,6 +288,15 @@ class Transformer(nn.Module):
         self.skip = nn.Parameter(torch.ones(num_layers // 2, device=device) )
 
     def forward(self, x: torch.Tensor):
+        # Extra value embeddings mixed in
+        ve = self.value_embedding(x)
+        ve = rearrange(ve, "b s (head d_v) -> b head s d_v", head=self.layers[0].mha.num_heads, d_v=self.layers[0].mha.d_v)
+        
+        #ve = ve.contiguous() 
+
+        lambdas = self.lambdas
+
+
         x = self.embedding(x)
 
         # U-net from NanoGPT speedrun:
@@ -292,9 +304,10 @@ class Transformer(nn.Module):
         skip_connections = []
         skip_weights = self.skip
         for i in range(len(self.layers)):
+            ve_for_layer = ve if i >= len(self.layers) - 2 else None  # Only last 2 layers
             if i >= mid:
                 x = x + skip_weights[i-mid] * skip_connections.pop()
-            x = self.layers[i](x)
+            x = self.layers[i](x, ve_for_layer, lambdas[i]) # ve == first layer, we also pass it on to bottom 6 layers (layers 6-11)
             if i < mid: # after x = self.layers to add skip connection from output of block
                 skip_connections.append(x)
 
@@ -541,11 +554,13 @@ class GatedHeadwiseAttention(nn.Module):
         else:
             self.rope = None
 
-    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None, value_embedding: torch.Tensor | None = None, lambdas: torch.Tensor | None = None) -> torch.Tensor:
         # We split the embedding dimension into an additional batch dimension (heads)
         Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
         K = rearrange(self.Wk(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
         V = rearrange(self.Wv(x), "b s (head d_v) -> b head s d_v", d_v=self.d_v)
+        #value_embedding = rearrange(value_embedding, "b s (head d_v) -> b head s d_v", d_v=self.d_v)
+        V = lambdas[0] * V + lambdas[1] * value_embedding
 
         if self.rope != None:  # We are using RoPE
             if token_positions == None:  # create default 0, 1, .... positions if nothing else is supplied
@@ -627,11 +642,15 @@ class GatedAttention(nn.Module):
             #return torch.tril(torch.ones((seq_len, seq_len), device=device, dtype=dtype))
             return create_sliding_window_mask(seq_len=seq_len, window_size=seq_len, device=device, dtype=dtype)
 
-    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None, value_embedding: torch.Tensor | None = None, lambdas: torch.Tensor | None = None) -> torch.Tensor:
         # We split the embedding dimension into an additional batch dimension (heads)
         Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
         K = rearrange(self.Wk(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
         V = rearrange(self.Wv(x), "b s (head d_v) -> b head s d_v", d_v=self.d_v)
+
+        #value_embedding = rearrange(value_embedding, "b s (head d_v) -> b head s d_v", d_v=self.d_v)
+        if value_embedding is not None:  # Only mix if provided
+            V = lambdas[0] * V + lambdas[1] * value_embedding
 
         if self.rope != None:  # We are using RoPE
             if token_positions == None:  # create default 0, 1, .... positions if nothing else is supplied

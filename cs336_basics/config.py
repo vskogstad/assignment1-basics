@@ -42,6 +42,7 @@ class Config:
     grad_clip_norm: float
     optimizer: str
     scheduler: str
+    compile_model: bool
 
     # Experiment
     experiment_name: str

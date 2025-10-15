@@ -6,14 +6,14 @@ I've made minor modifications to test files to force utf-8 format when opening f
 
 To do a training run using open web text, clone the repo and run main.py. This will download training and validation data from huggingface and execute a training run using the settings in config file "best.yaml".  
 
-The model and training script is now a bit messy as I've tried to make it as efficient as possible without using external libraries or torch.nn.functional. Older block modules used in ablations are broken as I've not kept them up to date with changes in config files. Likewise running older config files might no longer work as I've changed config.py when implementing new features.
+The model and training script is now a bit messy as I've tried to make it as efficient as possible without using external libraries or torch.nn.functional. Some older block modules used in ablations are broken as I've not kept them up to date with changes in function signatures. Likewise running older config files will probably not work as I've changed config.py when implementing new features.
 
 
 ## Leaderboard submission
 
-[Final training run](https://api.wandb.ai/links/skogstadv-hobbyist/q4d1kri6)
+[Final training run](https://api.wandb.ai/links/skogstadv-hobbyist/w94h1ysd)
 
-Validation loss of 3.0762 over entire validation set after 10500 steps and 85 minutes of training. [Leaderboard](https://github.com/stanford-cs336/assignment1-basics-leaderboard?tab=readme-ov-file#openwebtext-subsample-validation-loss-leaderboard)  
+Validation loss of 3.0305. [Leaderboard](https://github.com/stanford-cs336/assignment1-basics-leaderboard?tab=readme-ov-file#openwebtext-subsample-validation-loss-leaderboard)  
 
 **Initial Architecture**
 
@@ -33,6 +33,10 @@ Incrementally increased lr from "optimal lr" until I felt I had spent too much o
 -QK-norm -> 3.094  
 -Adjusting AdamW params from [0.90, 0.95] to [0.9, 0.999] gave a surprisingly large boost -> 3.0839  
 -U-net architecture with learnable params. -> 3.0762  
+-NorMuon optimizer: https://arxiv.org/abs/2510.05491 
+-Mixing in extra embedding values in later value matrices like in NanoGPT speedrun. General idea: https://arxiv.org/pdf/2410.17897  
+-Scaling down d_model from 1536 to 1024 (training for more steps). Still way above chinchilla optimal, but such a model would not get good MFU.
+-Postponing full validation til after training for 90 mins (training for more steps). 
 
 **Attempts**
 
@@ -41,6 +45,5 @@ Incrementally increased lr from "optimal lr" until I felt I had spent too much o
 -Sliding window attention. Hybrid with 3 layers sliding window 1 full layer is only slightly worse, but no speedup.  
 -Grouped query attention. Worse, as expected.  
 -Scaling output of each block like in Ernie. Worse. Think this might be interfering with my layernorm scaling.  
--Mixing in extra embedding values in later value matrices like in NanoGPT speedrun. (Looks good 2/3 in but ends up worse in the end). General idea: https://arxiv.org/pdf/2410.17897  
 -Decreasing/increasing warmup steps or increasing learning rate after adding QK-norm gave no benefit.  
 -QK-clip. I was not able to get this to work. In theory it should help a bit with the MFU compared to QK-norm.  

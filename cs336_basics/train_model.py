@@ -81,10 +81,10 @@ def train(cfg: Config):
     train_data = np.load(cfg.train_dataset_path, mmap_mode="r")
     print(f"The training dataset contains {len(train_data):,} tokens")
     val_data = np.load(cfg.val_dataset_path, mmap_mode="r")
-    tokenizer = Tokenizer.from_files(
+    """tokenizer = Tokenizer.from_files(
         vocab_filepath=cfg.tokenizer_vocab_path,
         merges_filepath=cfg.tokenizer_merges_path,
-    )
+    )"""
     # We use randomized unrepeated data if we have enough available, break out if not
     assert(len(train_data) // (cfg.context_length * cfg.batch_size) > cfg.total_steps)
     
@@ -109,18 +109,20 @@ def train(cfg: Config):
         step = (
             load_checkpoint(src=source, model=model, optimizer=optimizer) + 1
         )  # increment by one, this step has already been done
-
-    # Training loop
+    
+    # Prefetch first batch
+    next_x, next_y = get_batch_nonrepeating(
+        dataset=train_data, batch_size=cfg.batch_size,
+        context_length=cfg.context_length, device=device,
+        starts=starts[0]
+    )
+    
+    
     for step in range(current_step, cfg.total_steps):
-        #x, y = get_batch(dataset=train_data, batch_size=cfg.batch_size, context_length=cfg.context_length, device=device, rng=rng)
-        x, y = get_batch_nonrepeating(
-                dataset=train_data,
-                batch_size=cfg.batch_size,
-                context_length=cfg.context_length,
-                device=device,
-                starts=starts[step],
-            )
-
+        # Current batch is already loaded
+        x, y = next_x, next_y
+        
+       
         optimizer.zero_grad()
         with torch.autocast(device_type="cuda", dtype=cfg.dtype):
             y_pred = model(x)
@@ -128,7 +130,17 @@ def train(cfg: Config):
             loss = loss_func(pred=y_pred, targets=y)
         # Trying to search for nan-source using regular cross entropy
         # loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
+        # Prefetch NEXT batch while processing current one
+        if step + 1 < cfg.total_steps:
+            next_x, next_y = get_batch_nonrepeating(
+                dataset=train_data, batch_size=cfg.batch_size,
+                context_length=cfg.context_length, device=device,
+                starts=starts[step + 1]
+            )
+            
         loss.backward()
+        #print(f"lambdas grad: {model.lambdas.grad}")
+        #print(f"lambdas grad is None: {model.lambdas.grad is None}")
 
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
 
@@ -144,6 +156,7 @@ def train(cfg: Config):
                 param_group["lr"] = new_lr
 
         optimizer.step()
+
 
         # Logging
         chunk_loss += loss.detach()
@@ -162,6 +175,7 @@ def train(cfg: Config):
             print(
                 f"step = {step} | Loss = {loss_accumulated:.3f} | {chunk_time = :.2f} | tok/s = {token_per_s:,.1f} | lr = {new_lr:.5f} | MFU = {mfu}"
             )
+            
 
             chunk_loss = 0
             chunk_steps = 0
@@ -178,11 +192,10 @@ def train(cfg: Config):
                     step=current_tokens,
                 )
 
-        # if step % 25 == 0:
-        # monitor_norms(model, step, y_pred)
         # validation
         if step % cfg.eval_interval == 0 and step != 0:
-            val_loss = calculate_loss(model, val_data, cfg, current_tokens, device, rng=rng)
+            print(f"skip: {model.skip}, lambdas: {model.lambdas}")
+            val_loss = calculate_loss(model, val_data, cfg, current_tokens, device, rng=rng, num_iters=15)
             print(f"The validation loss is {val_loss:.4f}")
             if cfg.wandb_project:
                 wandb.log({"Validation loss": val_loss}, step=current_tokens)
@@ -201,14 +214,18 @@ def train(cfg: Config):
     if cfg.wandb_project:
         run.finish()
     print(f"Total time {timeit.default_timer() - t_start:3f} seconds spent.")
+    
+    # Do full validation after training model
+    val_loss = calculate_loss(model, val_data, cfg, current_tokens, device, rng=rng)
+    print(f"The full validation loss is {val_loss:.4f}")
 
 
 
-
-def calculate_loss(model, data, cfg, current_tokens, device, rng=None):
+def calculate_loss(model, data, cfg, current_tokens, device, rng=None, num_iters = None):
     model.eval()
     accum_loss = 0
-    num_iters = math.ceil(len(data) / (cfg.context_length * cfg.batch_size))
+    if not num_iters:  # Use full validation set unless specified
+        num_iters = math.ceil(len(data) / (cfg.context_length * cfg.batch_size))
     # print(f"{num_iters=}")
     for i in range(num_iters):
         # print(f"This is {i=}")
@@ -277,11 +294,13 @@ def get_optimizer(cfg: Config, model):
     # Currently only supports AdamW, but setup of parameters to also could initialize Muon optimizer later
 
     hidden_matrix_params = [
-        param for name, param in model.layers.named_parameters() if param.ndim >= 2 and "embed" not in name
+        param for name, param in model.named_parameters()  
+        if param.ndim >= 2 and "embed" not in name and "lm_head" not in name
     ]
     embed_params = [param for name, param in model.named_parameters() if "embed" in name]
     scalar_params = [param for param in model.parameters() if param.ndim < 2]
     head_params = [model.lm_head.W]
+
     if cfg.optimizer == "adamw":
         optimizer = AdamW(
             [
@@ -296,6 +315,20 @@ def get_optimizer(cfg: Config, model):
         )
     elif cfg.optimizer == "muon":
         optimizer = MuonWithAdamW(
+            [
+                {"params": hidden_matrix_params, "weight_decay": cfg.weight_decay, "use_muon": True, "lr_scale": 1},
+                {"params": embed_params, "weight_decay": 0, "use_muon": False, "lr_scale": 1},
+                {"params": scalar_params, "weight_decay": 0, "use_muon": False, "lr_scale": 1},
+                {"params": head_params, "weight_decay": cfg.weight_decay/3, "use_muon": False, "lr_scale": 1/3},
+            ],
+            # lr=cfg.max_learning_rate,
+            momentum=cfg.muon_momentum,
+            weight_decay=cfg.weight_decay,
+            betas=cfg.betas,
+            eps=cfg.eps,
+        )
+    elif cfg.optimizer == "normuon":
+        optimizer = NorMuonWithAdamW(
             [
                 {"params": hidden_matrix_params, "weight_decay": cfg.weight_decay, "use_muon": True, "lr_scale": 1},
                 {"params": embed_params, "weight_decay": 0, "use_muon": False, "lr_scale": 1},
@@ -633,8 +666,13 @@ class MuonWithAdamW(torch.optim.Optimizer):
                     m = beta_1 * m + (1 - beta_1) * grad  # Update first moment estimate
                     v = beta_2 * v + (1 - beta_2) * grad**2  # Update second moment estimate
 
-                    lr_t = lr * (math.sqrt(1 - beta_2**t) / (1 - beta_1**t))  # adjust lr
-                    p.data = p.data - lr_t * (m / (torch.sqrt(v) + eps))  # Update weight tensor in-place.
+                    
+                    corr_1 = 1 - beta_1**t
+                    corr_2 = math.sqrt(1 - beta_2**t)
+
+                    lr_t = lr * (corr_2 / corr_1)  # adjust lr
+                    denominator = (torch.sqrt(v) + eps * corr_2) # https://x.com/Tim_Dettmers/status/1969131103798567295
+                    p.data = p.data - lr_t * (m / denominator)  # Update weight tensor in-place.
                     p.data = p.data - lr * weight_decay * p.data  # Apply weight decay
                     state["t"] = t + 1  # Increment iteration number.
                     state["m"] = m
@@ -656,6 +694,102 @@ class MuonWithAdamW(torch.optim.Optimizer):
                     # p.data -= lr * (O_t + weight_decay * p.data)  # Update weight tensor in-place and do weight decay.
                     # Wt = Wt−1 - ηt(0.2·Ot · sqrt(max(A,B))+λWt−1)
                     state["B_t"] = B_t
+
+        return loss
+
+
+
+class NorMuonWithAdamW(torch.optim.Optimizer):
+    """
+    Implements NorMuon. This method already uses the modified Muon with transfer of LR parameters from adamw using roughly the following formula as before:
+    Wt = Wt−1 - ηt(0.2·Ot · sqrt(max(A,B))+λWt−1)
+    Becomes with NorMuon:
+    Wt = Wt−1 - ηt(0.2·Ot · sqrt(A*B)/|Ô|f)+λWt−1)
+
+    η = Learning rate
+    λ = weight decay
+    A,B is the matrix dimensions of the parameter
+
+    Original transfer from Kimi: https://arxiv.org/abs/2502.16982
+    NorMuon Paper: https://arxiv.org/pdf/2510.05491
+
+    """
+
+    def __init__(self, params, lr=1e-3, momentum=0.95, betas=(0.9, 0.95), weight_decay=1e-4, eps=1e-8):
+        if lr < 0:
+            raise ValueError(f"Invalid learning rate: {lr}")
+        defaults = {"lr": lr, "eps": eps, "momentum": momentum, "weight_decay": weight_decay, "betas": betas}
+        super().__init__(params, defaults)
+
+
+    @torch.no_grad()
+    def step(self, closure: Optional[Callable] = None):
+        loss = None if closure is None else closure()
+
+        for group in self.param_groups:
+            lr = group["lr"]  # Get the learning rate.
+            weight_decay = group["weight_decay"]
+            if not group["use_muon"]:
+                beta_1, beta_2 = group["betas"]
+                eps = group["eps"]
+                weight_decay = group["weight_decay"]
+            else:
+                momentum = group["momentum"]
+                eps = group["eps"]
+
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+
+                if not group["use_muon"]:  # Use adamw
+                    state = self.state[p]  # Get state associated with p.
+                    t = state.get("t", 1)  # Get iteration number from the state, or initial value.
+                    m = state.get(
+                        "m", torch.zeros_like(p.data)
+                    )  # Get first vector momentum from the state, or initial value.
+                    v = state.get(
+                        "v", torch.zeros_like(p.data)
+                    )  # Get second vector momentum from the state, or initial value.
+
+                    grad = p.grad.data  # Get the gradient of loss with respect to p.
+                    m = beta_1 * m + (1 - beta_1) * grad  # Update first moment estimate
+                    v = beta_2 * v + (1 - beta_2) * grad**2  # Update second moment estimate
+
+                    
+                    corr_1 = 1 - beta_1**t
+                    corr_2 = math.sqrt(1 - beta_2**t)
+
+                    lr_t = lr * (corr_2 / corr_1)  # adjust lr
+                    denominator = (torch.sqrt(v) + eps * corr_2) # https://x.com/Tim_Dettmers/status/1969131103798567295
+                    p.data = p.data - lr_t * (m / denominator)  # Update weight tensor in-place.
+                    p.data = p.data - lr * weight_decay * p.data  # Apply weight decay
+                    state["t"] = t + 1  # Increment iteration number.
+                    state["m"] = m
+                    state["v"] = v
+
+                else:  # Use Muon
+
+                    a_dim, b_dim = p.data.shape  # Finding the dimensions of the matrix to scale the learning rate
+
+                    state = self.state[p]  # Get state associated with p.
+                    B_t = state.get("B_t", torch.zeros_like(p.data))
+                    v_t = state.get("v_t", torch.zeros(a_dim, device=p.device))
+
+                    grad = p.grad.data  # Get the gradient of loss with respect to p.
+                    B_t = momentum * B_t + (1 - momentum) * grad
+                    update = momentum * B_t + (1 - momentum) * grad # Works better than the proper algorithm.
+                    O_t = newtonschulz5(update.bfloat16(), steps=5, eps=1e-7)  # Approximate O_t using newton schulz
+                    v_t = momentum * v_t + (1 - momentum) * O_t.square().mean(dim=1) # Use momentum along the columns
+                    V_t = v_t.unsqueeze(1)
+                    O_mod = O_t / (torch.sqrt(V_t + eps))
+
+                    #a_dim, b_dim = p.data.shape  # Finding the dimensions of the matrix to scale the learning rate
+                    eta_hat = 0.2 * lr * math.sqrt(a_dim * b_dim) / (torch.norm(O_mod, p='fro') + 1e-10)
+                    p.data = p.data - lr * weight_decay * p.data - eta_hat * O_mod # Update weight tensor in-place and do weight decay. Scaled so we can use optimized parameters for adamw.
+                    # p.data -= lr * (O_t + weight_decay * p.data)  # Update weight tensor in-place and do weight decay.
+                    # Wt = Wt−1 - ηt(0.2·Ot · sqrt(max(A,B))+λWt−1)
+                    state["B_t"] = B_t
+                    state["v_t"] = v_t
 
         return loss
 
@@ -748,6 +882,7 @@ if __name__ == "__main__":
     # load config
     config = Config.from_yaml(args.config)
     config.update_from_args(args)
+    calculate_loss()
     sample_from_model_checkpoint(
         model_path="cs336_basics/configs/experiments/U-net_learnable_10.pth",
         cfg=config,
