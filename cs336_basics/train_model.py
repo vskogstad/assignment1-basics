@@ -787,11 +787,11 @@ class NorMuonWithAdamW(torch.optim.Optimizer):
                     eta_hat = 0.2 * lr * math.sqrt(a_dim * b_dim) / (torch.norm(O_mod, p='fro') + 1e-10)
                     u = eta_hat * O_mod
                     #base = torch.ones_like(p.data)
-                    CWD = torch.where(u * p.data >= 0, 1, 0)
-                    print(CWD)
-                    print(f"{(CWD * p.data)=}")
-                    import sys; sys.exit()
-                    p.data = p.data - lr * weight_decay * (CWD * p.data) - eta_hat * O_mod # Update weight tensor in-place and do weight decay. Scaled so we can use optimized parameters for adamw.
+                    wd_mask = torch.where(u * p.data >= 0, 1, 0)
+                    #print(CWD)
+                    #print(f"{(CWD * p.data)=}")
+                    #import sys; sys.exit()
+                    p.data = p.data - lr * weight_decay * (wd_mask * p.data) - eta_hat * O_mod # Update weight tensor in-place and do weight decay. Scaled so we can use optimized parameters for adamw.
                     # p.data -= lr * (O_t + weight_decay * p.data)  # Update weight tensor in-place and do weight decay.
                     # Wt = Wt−1 - ηt(0.2·Ot · sqrt(max(A,B))+λWt−1)
                     state["B_t"] = B_t
