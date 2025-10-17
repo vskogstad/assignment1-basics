@@ -762,9 +762,9 @@ class NorMuonWithAdamW(torch.optim.Optimizer):
                     lr_t = lr * (corr_2 / corr_1)  # adjust lr
                     denominator = (torch.sqrt(v) + eps * corr_2) # https://x.com/Tim_Dettmers/status/1969131103798567295
                     p.data = p.data - lr_t * (m / denominator)  # Update weight tensor in-place.
-                    wd_mask = torch.where((m / denominator) * p.data >= 0, 1, 0)
+                    #wd_mask = torch.where((m / denominator) * p.data >= 0, 1, 0)
 
-                    p.data = p.data - lr * weight_decay * (wd_mask * p.data)  # Apply weight decay
+                    p.data = p.data - lr * weight_decay * p.data  # Apply weight decay
                     state["t"] = t + 1  # Increment iteration number.
                     state["m"] = m
                     state["v"] = v
@@ -787,13 +787,13 @@ class NorMuonWithAdamW(torch.optim.Optimizer):
 
                     #a_dim, b_dim = p.data.shape  # Finding the dimensions of the matrix to scale the learning rate
                     eta_hat = 0.2 * lr * math.sqrt(a_dim * b_dim) / (torch.norm(O_mod, p='fro') + 1e-10)
-                    u = eta_hat * O_mod
+                    #u = eta_hat * O_mod
                     #base = torch.ones_like(p.data)
-                    wd_mask = torch.where(u * p.data >= 0, 1, 0)
+                    #wd_mask = torch.where(u * p.data >= 0, 1, 0)
                     #print(CWD)
                     #print(f"{(CWD * p.data)=}")
                     #import sys; sys.exit()
-                    p.data = p.data - lr * weight_decay * (wd_mask * p.data) - eta_hat * O_mod # Update weight tensor in-place and do weight decay. Scaled so we can use optimized parameters for adamw.
+                    p.data = p.data - lr * weight_decay * (p.data) - eta_hat * O_mod # Update weight tensor in-place and do weight decay. Scaled so we can use optimized parameters for adamw.
                     # p.data -= lr * (O_t + weight_decay * p.data)  # Update weight tensor in-place and do weight decay.
                     # Wt = Wt−1 - ηt(0.2·Ot · sqrt(max(A,B))+λWt−1)
                     state["B_t"] = B_t
