@@ -762,7 +762,9 @@ class NorMuonWithAdamW(torch.optim.Optimizer):
                     lr_t = lr * (corr_2 / corr_1)  # adjust lr
                     denominator = (torch.sqrt(v) + eps * corr_2) # https://x.com/Tim_Dettmers/status/1969131103798567295
                     p.data = p.data - lr_t * (m / denominator)  # Update weight tensor in-place.
-                    p.data = p.data - lr * weight_decay * p.data  # Apply weight decay
+                    wd_mask = torch.where((m / denominator) * p.data >= 0, 1, 0)
+
+                    p.data = p.data - lr * weight_decay * (wd_mask * p.data)  # Apply weight decay
                     state["t"] = t + 1  # Increment iteration number.
                     state["m"] = m
                     state["v"] = v
