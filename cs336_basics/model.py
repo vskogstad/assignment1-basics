@@ -87,7 +87,7 @@ class SeeDNorm(nn.Module):
         self.eps = eps
         self.weights = nn.Parameter(torch.ones(d_model, dtype=torch.float32, device=device))
         self.alphas = nn.Parameter(torch.ones(d_model, dtype=torch.float32, device=device))
-        self.betas_T = nn.Parameter(torch.ones((1,d_model), dtype=torch.float32, device=device))
+        self.betas = nn.Parameter(torch.zeros((d_model), dtype=torch.float32, device=device))
         self.act = Tanh()
         self.d_model = d_model
 
@@ -96,14 +96,15 @@ class SeeDNorm(nn.Module):
         in_dtype = x.dtype
         x = x.to(torch.float32)
 
-        # Elementwise scaling matrix
-        x1 = (x * self.betas_T)
-        print(x1.shape) #, self.alphas.shape)
-        seedN = self.act(x1) * self.alphas 
-
         # RMS Norm
         norm_factor = torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + self.eps)
-        x = seedN + (self.weights )* x * norm_factor
+
+        # Elementwise scaling matrix
+        x1 = x @ self.betas.unsqueeze(-1)
+        #print(x1.shape) #, self.alphas.shape)
+        scale = self.act(x1) * self.alphas 
+        x = (scale + self.weights) * x * norm_factor
+
         # convert back to original dtype
         return x.to(in_dtype)
 
@@ -199,13 +200,13 @@ class Block(nn.Module):
                 device=device,
                 dtype=dtype,
             )
-        self.rmsn1 = RMSNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device)
+        self.rmsn1 = SeeDNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device)
         self.scaling = depth**-0.5
         if glu:
             self.ffn = SWIGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
         else:
             self.ffn = SILU()
-        self.rmsn2 = RMSNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device)
+        self.rmsn2 = SeeDNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device)
 
     def forward(self, x: torch.Tensor, ve: torch.Tensor, lambdas):
         """Pre norm"""
