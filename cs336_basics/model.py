@@ -79,6 +79,34 @@ class RMSNorm(nn.Module):
         # convert back to original dtype
         return x.to(in_dtype)
 
+class SeeDNorm(nn.Module):
+    def __init__(
+        self, d_model: int, eps: float = 1e-5, device: torch.device | None = None, dtype: torch.dtype | None = None
+    ):
+        super().__init__()
+        self.eps = eps
+        self.weights = nn.Parameter(torch.ones(d_model, dtype=torch.float32, device=device))
+        self.alphas = nn.Parameter(torch.ones(d_model, dtype=torch.float32, device=device))
+        self.betas_T = nn.Parameter(torch.ones((1,d_model), dtype=torch.float32, device=device))
+        self.act = Tanh()
+        self.d_model = d_model
+
+    def forward(self, x: torch.Tensor):
+        # convert from incoming dtype to float32 (If mixed precision training)
+        in_dtype = x.dtype
+        x = x.to(torch.float32)
+
+        # Elementwise scaling matrix
+        x1 = (x * self.betas_T)
+        print(x1.shape) #, self.alphas.shape)
+        seedN = self.act(x1) * self.alphas 
+
+        # RMS Norm
+        norm_factor = torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + self.eps)
+        x = seedN + (self.weights )* x * norm_factor
+        # convert back to original dtype
+        return x.to(in_dtype)
+
 
 class SILU(nn.Module):
     def __init__(self):
@@ -86,6 +114,14 @@ class SILU(nn.Module):
 
     def forward(self, x):
         x = x / (1 + torch.exp(-x))
+        return x
+
+class Tanh(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = torch.tanh(x)
         return x
 
 
