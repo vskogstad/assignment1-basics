@@ -241,8 +241,8 @@ def calculate_loss(model, data, cfg, current_tokens, device, rng=None, num_iters
             y_pred = model(x_val)
             # print(f"We get here for {i}")
             val_loss = cross_entropy(pred=y_pred, targets=y_val)
-            accum_loss += val_loss
-
+            accum_loss += val_loss.item()
+    #torch.cuda.empty_cache()
     model.train()
     return accum_loss / num_iters
 
@@ -306,7 +306,7 @@ def get_optimizer(cfg: Config, model):
             [
                 {"params": hidden_matrix_params, "weight_decay": cfg.weight_decay},
                 {"params": embed_params, "weight_decay": 0},
-                {"params": scalar_params, "weight_decay": 0},
+                {"params": scalar_params, "weight_decay": cfg.weight_decay},
                 {"params": head_params, "weight_decay": cfg.weight_decay},
             ],
             lr=cfg.min_learning_rate,

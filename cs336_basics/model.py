@@ -200,13 +200,13 @@ class Block(nn.Module):
                 device=device,
                 dtype=dtype,
             )
-        self.rmsn1 = SeeDNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device)
+        self.rmsn1 = RMSNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device)
         self.scaling = depth**-0.5
         if glu:
             self.ffn = SWIGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
         else:
             self.ffn = SILU()
-        self.rmsn2 = SeeDNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device)
+        self.rmsn2 = RMSNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device)
 
     def forward(self, x: torch.Tensor, ve: torch.Tensor, lambdas):
         """Pre norm"""
