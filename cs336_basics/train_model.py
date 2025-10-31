@@ -110,37 +110,25 @@ def train(cfg: Config):
             load_checkpoint(src=source, model=model, optimizer=optimizer) + 1
         )  # increment by one, this step has already been done
     
-    # Prefetch first batch
-    next_x, next_y = get_batch_nonrepeating(
-        dataset=train_data, batch_size=cfg.batch_size,
-        context_length=cfg.context_length, device=device,
-        starts=starts[0]
-    )
     
     
     for step in range(current_step, cfg.total_steps):
-        # Current batch is already loaded
-        x, y = next_x, next_y
-        
-       
         optimizer.zero_grad()
-        with torch.autocast(device_type="cuda", dtype=cfg.dtype):
-            y_pred = model(x)
+        x, y = get_batch_nonrepeating(
+                    dataset=train_data, batch_size=cfg.batch_size,
+                    context_length=cfg.context_length, device=device,
+                    starts=starts[step]
+                )
+        if cfg.grad_accum_steps == 1: # Faster than loop
+            with torch.autocast(device_type="cuda", dtype=cfg.dtype):
+                y_pred = model(x)
+                loss = loss_func(pred=y_pred, targets=y)
 
-            loss = loss_func(pred=y_pred, targets=y)
-        # Trying to search for nan-source using regular cross entropy
-        # loss = F.cross_entropy(rearrange(y_pred, "b s v -> (b s) v"), rearrange(y, "b s -> (b s)").long())
-        # Prefetch NEXT batch while processing current one
-        if step + 1 < cfg.total_steps:
-            next_x, next_y = get_batch_nonrepeating(
-                dataset=train_data, batch_size=cfg.batch_size,
-                context_length=cfg.context_length, device=device,
-                starts=starts[step + 1]
-            )
-            
-        loss.backward()
-        #print(f"lambdas grad: {model.lambdas.grad}")
-        #print(f"lambdas grad is None: {model.lambdas.grad is None}")
+            loss_accum = loss.detach()
+            loss.backward()
+
+
+
 
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
 
@@ -159,7 +147,7 @@ def train(cfg: Config):
 
 
         # Logging
-        chunk_loss += loss.detach()
+        chunk_loss += loss_accum
         chunk_steps += 1
         current_tokens += cfg.batch_size * cfg.context_length
         if step % cfg.log_interval == 0:

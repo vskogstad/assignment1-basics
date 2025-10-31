@@ -43,6 +43,7 @@ class Config:
     optimizer: str
     scheduler: str
     compile_model: bool
+    grad_accum_steps: int
 
     # Experiment
     experiment_name: str
