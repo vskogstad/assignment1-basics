@@ -5,7 +5,7 @@ num_layers: 12
 num_heads: 8
 d_model: 1024
 d_ff: 4096
-context_length: 512
+context_length: 1024
 theta: 10000
 pre_norm: true
 layer_norm: true
@@ -26,8 +26,8 @@ min_learning_rate: 1.0e-4
 max_learning_rate: 0.0050
 weight_decay: 0.1
 warmup_steps: 600
-total_steps: 5800
-cosine_cycle_steps: 15800
+total_steps: 7050
+cosine_cycle_steps: 7050 #15800
 betas: [0.9, 0.999]
 eps: 1.0e-8
 muon_momentum: 0.95
@@ -35,13 +35,13 @@ grad_clip_norm: 1.0
 optimizer: "normuon"
 scheduler: "cosine"
 compile_model: true
-grad_accum_steps: 1
+grad_accum_steps: 4
 
 # Experiment configuration
 experiment_name: "U-net_learnable"
 seed: 42
 log_interval: 10
-eval_interval: 3000
+eval_interval: 100
 save_interval: 16100
 output_dir: "cs336_basics/configs/experiments"
 wandb_project: "H100-sxm5-OWT-testruns"

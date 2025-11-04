@@ -695,6 +695,9 @@ class GatedAttention(nn.Module):
             Q, K = self.q_norm(Q), self.k_norm(K) # QK norm. own variant of speedrun implementation from @Grad62304977
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
+        
+
+
 
         # mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
         mha = scaled_dot_product_attention(Q, K, V, mask=self.attention_mask)

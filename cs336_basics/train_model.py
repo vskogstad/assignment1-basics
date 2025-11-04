@@ -127,6 +127,18 @@ def train(cfg: Config):
             loss_accum = loss.detach()
             loss.backward()
 
+        else:
+            x_s = torch.split(x, cfg.batch_size//cfg.grad_accum_steps, dim=0)
+            y_s = torch.split(y, cfg.batch_size//cfg.grad_accum_steps, dim=0)
+            loss_accum = 0
+            for mini_step in range(cfg.grad_accum_steps):
+                x = x_s[mini_step]
+                y = y_s[mini_step]
+                with torch.autocast(device_type="cuda", dtype=cfg.dtype):
+                    y_pred = model(x)
+                    loss = loss_func(pred=y_pred, targets=y)/cfg.grad_accum_steps
+                    loss_accum += loss.detach()
+                    loss.backward()
 
 
 
@@ -226,11 +238,31 @@ def calculate_loss(model, data, cfg, current_tokens, device, rng=None, num_iters
                 rng=None,
                 current_iter=i,
             )
-            y_pred = model(x_val)
-            # print(f"We get here for {i}")
-            val_loss = cross_entropy(pred=y_pred, targets=y_val)
-            accum_loss += val_loss.item()
-    #torch.cuda.empty_cache()
+            
+            if cfg.grad_accum_steps == 1: # Faster than loop
+                with torch.autocast(device_type="cuda", dtype=cfg.dtype):
+                    y_pred = model(x_val)
+                    # print(f"We get here for {i}")
+                    val_loss = cross_entropy(pred=y_pred, targets=y_val)
+                    accum_loss += val_loss.item()
+
+            else:
+                x_s = torch.split(x_val, cfg.batch_size//cfg.grad_accum_steps, dim=0)
+                y_s = torch.split(y_val, cfg.batch_size//cfg.grad_accum_steps, dim=0)
+                loss_accum = 0
+                for mini_step in range(cfg.grad_accum_steps):
+                    x = x_s[mini_step]
+                    y = y_s[mini_step]
+                    with torch.autocast(device_type="cuda", dtype=cfg.dtype):
+                        y_pred = model(x)
+                        loss = cross_entropy(pred=y_pred, targets=y)/cfg.grad_accum_steps
+                        accum_loss += loss.detach()
+
+
+
+
+            
+    torch.cuda.empty_cache()
     model.train()
     return accum_loss / num_iters
 
