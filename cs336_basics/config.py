@@ -44,6 +44,9 @@ class Config:
     scheduler: str
     compile_model: bool
     grad_accum_steps: int
+    sky_ladder: bool
+    sky_ladder_alpha: float
+    sky_ladder_min_window: int
 
     # Experiment
     experiment_name: str

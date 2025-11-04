@@ -324,7 +324,7 @@ class Transformer(nn.Module):
         self.device = device
         self.skip = nn.Parameter(torch.ones(num_layers // 2, device=device) )
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, seq_windows: torch.tensor):
         # Extra value embeddings mixed in
         ve = self.value_embedding(x)
         ve = rearrange(ve, "b s (head d_v) -> b head s d_v", head=self.layers[0].mha.num_heads, d_v=self.layers[0].mha.d_v)
@@ -344,7 +344,7 @@ class Transformer(nn.Module):
             ve_for_layer = ve if i >= len(self.layers) - 2 else None  # Only last 2 layers
             if i >= mid:
                 x = x + skip_weights[i-mid] * skip_connections.pop()
-            x = self.layers[i](x, ve_for_layer, lambdas[i]) # ve == first layer, we also pass it on to bottom 6 layers (layers 6-11)
+            x = self.layers[i](x, ve_for_layer, lambdas[i], seq_windows) # ve == first layer, we also pass it on to bottom 6 layers (layers 6-11)
             if i < mid: # after x = self.layers to add skip connection from output of block
                 skip_connections.append(x)
 
@@ -665,6 +665,14 @@ class GatedAttention(nn.Module):
             self.rope = RoPE(theta=theta, d_k=self.d_k, max_sequence_length=max_sequence_length, device=device)
         else:
             self.rope = None
+    
+    
+    def get_segments(int window_size, int sequence_len):
+        """Get a list of segments within the true sequence length, matching current skyladder window size"""
+        segments = []
+        for i in range(ceil(sequence_len/window_size)):
+            segments.append((i*window_size, min((i+1)*window_size, sequence_len)))
+        return segments
 
     def create_depth_specific_attention_mask(self, depth, seq_len, device, dtype):
         """
@@ -698,10 +706,17 @@ class GatedAttention(nn.Module):
         
 
 
+        if (cfg.skyladder and window_size < seq_len):
+            for (s0, s1) in get_segments(window_size, seq_len):
+                q = Q[:, :, s0:s1, :] # b, h, s, d_k
+                k = K[:, :, s0:s1, :]
+                v = V[:, :, s0:s1, :]
 
-        # mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
-        mha = scaled_dot_product_attention(Q, K, V, mask=self.attention_mask)
-        # rearrenge back into original embedding dimension
+                # mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
+                mha[:, :, s0:s1, :] = scaled_dot_product_attention(q, k, v, mask=self.attention_mask)
+            # rearrenge back into original embedding dimension
+        else:
+            mha = scaled_dot_product_attention(Q, K, V, mask=self.attention_mask)
         mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
         
 

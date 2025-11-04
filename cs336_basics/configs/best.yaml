@@ -3,7 +3,7 @@ model_name: "transformer"
 vocab_size: 32000 # 32768
 num_layers: 12
 num_heads: 8
-d_model: 1024
+d_model: 512
 d_ff: 4096
 context_length: 1024
 theta: 10000
@@ -35,13 +35,16 @@ grad_clip_norm: 1.0
 optimizer: "normuon"
 scheduler: "cosine"
 compile_model: true
-grad_accum_steps: 4
+grad_accum_steps: 1
+sky_ladder: true
+sky_ladder_alpha: 0.2
+sky_ladder_min_window: 16
 
 # Experiment configuration
 experiment_name: "U-net_learnable"
 seed: 42
 log_interval: 10
-eval_interval: 100
+eval_interval: 1000
 save_interval: 16100
 output_dir: "cs336_basics/configs/experiments"
 wandb_project: "H100-sxm5-OWT-testruns"

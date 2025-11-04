@@ -114,14 +114,15 @@ def train(cfg: Config):
     
     for step in range(current_step, cfg.total_steps):
         optimizer.zero_grad()
-        x, y = get_batch_nonrepeating(
+        x, y, seq_windows = get_batch_nonrepeating(
                     dataset=train_data, batch_size=cfg.batch_size,
                     context_length=cfg.context_length, device=device,
-                    starts=starts[step]
+                    starts=starts[step],
+                    window = min(floor(cfg.sky_ladder_min_window + cfg.alpha*step), cfg.context_length) 
                 )
         if cfg.grad_accum_steps == 1: # Faster than loop
             with torch.autocast(device_type="cuda", dtype=cfg.dtype):
-                y_pred = model(x)
+                y_pred = model(x, seq_windows)
                 loss = loss_func(pred=y_pred, targets=y)
 
             loss_accum = loss.detach()
@@ -141,9 +142,9 @@ def train(cfg: Config):
                     loss.backward()
 
 
-
+        window_size +=
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
-
+        
         if cfg.scheduler == "cosine":
             new_lr = get_lr_cosine(
                 step=step,
