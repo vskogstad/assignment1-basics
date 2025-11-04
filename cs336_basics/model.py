@@ -208,10 +208,10 @@ class Block(nn.Module):
             self.ffn = SILU()
         self.rmsn2 = RMSNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device)
 
-    def forward(self, x: torch.Tensor, ve: torch.Tensor, lambdas):
+    def forward(self, x: torch.Tensor, ve: torch.Tensor, lambdas, seq_windows):
         """Pre norm"""
         # Attention with prenorm and lns
-        x = x + self.mha(self.scaling * self.rmsn1(x), None, ve, lambdas)
+        x = x + self.mha(self.scaling * self.rmsn1(x), None, ve, lambdas, seq_windows)
         # SILU or SWIGLU FFN with prenorm and lns
         x = x + self.ffn(self.scaling * self.rmsn2(x))
         return x
@@ -666,13 +666,6 @@ class GatedAttention(nn.Module):
         else:
             self.rope = None
     
-    
-    def get_segments(int window_size, int sequence_len):
-        """Get a list of segments within the true sequence length, matching current skyladder window size"""
-        segments = []
-        for i in range(ceil(sequence_len/window_size)):
-            segments.append((i*window_size, min((i+1)*window_size, sequence_len)))
-        return segments
 
     def create_depth_specific_attention_mask(self, depth, seq_len, device, dtype):
         """
@@ -687,7 +680,7 @@ class GatedAttention(nn.Module):
             #return torch.tril(torch.ones((seq_len, seq_len), device=device, dtype=dtype))
             return create_sliding_window_mask(seq_len=seq_len, window_size=seq_len, device=device, dtype=dtype)
 
-    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None, value_embedding: torch.Tensor | None = None, lambdas: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None, value_embedding: torch.Tensor | None = None, lambdas: torch.Tensor | None = None, seq_windows: torch.Tensor | None = None) -> torch.Tensor:
         # We split the embedding dimension into an additional batch dimension (heads)
         Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
         K = rearrange(self.Wk(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
@@ -706,8 +699,9 @@ class GatedAttention(nn.Module):
         
 
 
-        if (cfg.skyladder and window_size < seq_len):
-            for (s0, s1) in get_segments(window_size, seq_len):
+        if seq_windows != None:
+            mha = torch.zeros_like(V)
+            for (s0, s1) in zip(seq_windows, seq_windows[1:]):
                 q = Q[:, :, s0:s1, :] # b, h, s, d_k
                 k = K[:, :, s0:s1, :]
                 v = V[:, :, s0:s1, :]

@@ -114,12 +114,18 @@ def train(cfg: Config):
     
     for step in range(current_step, cfg.total_steps):
         optimizer.zero_grad()
-        x, y, seq_windows = get_batch_nonrepeating(
+        x, y = get_batch_nonrepeating(
                     dataset=train_data, batch_size=cfg.batch_size,
                     context_length=cfg.context_length, device=device,
                     starts=starts[step],
-                    window = min(floor(cfg.sky_ladder_min_window + cfg.alpha*step), cfg.context_length) 
+                    
                 )
+        w = min(math.floor(cfg.sky_ladder_min_window + cfg.sky_ladder_alpha*step), cfg.context_length)
+        seq_windows = torch.cat([
+            torch.arange(0, cfg.context_length, w, device=device, dtype=torch.int32),
+            torch.tensor([cfg.context_length], device=device, dtype=torch.int32)
+        ])
+
         if cfg.grad_accum_steps == 1: # Faster than loop
             with torch.autocast(device_type="cuda", dtype=cfg.dtype):
                 y_pred = model(x, seq_windows)
@@ -142,7 +148,6 @@ def train(cfg: Config):
                     loss.backward()
 
 
-        window_size +=
         clip_gradient(parameters=model.parameters(), max_l2_norm=cfg.grad_clip_norm)
         
         if cfg.scheduler == "cosine":
@@ -171,10 +176,11 @@ def train(cfg: Config):
             chunk_time = t_1 - t_0
             t_0 = timeit.default_timer()
 
+
             token_per_s = chunk_steps * cfg.batch_size * cfg.context_length / (chunk_time)
             mfu = (flops_per_batch * cfg.log_interval / (chunk_time)) / max_flops if max_flops != float("inf") else None
             print(
-                f"step = {step} | Loss = {loss_accumulated:.3f} | {chunk_time = :.2f} | tok/s = {token_per_s:,.1f} | lr = {new_lr:.5f} | MFU = {mfu}"
+                f"step = {step} | Loss = {loss_accumulated:.3f} | {chunk_time = :.2f} | tok/s = {token_per_s:,.1f} | lr = {new_lr:.5f} | MFU = {mfu:.3f} | window {w}"
             )
             
 
@@ -242,7 +248,7 @@ def calculate_loss(model, data, cfg, current_tokens, device, rng=None, num_iters
             
             if cfg.grad_accum_steps == 1: # Faster than loop
                 with torch.autocast(device_type="cuda", dtype=cfg.dtype):
-                    y_pred = model(x_val)
+                    y_pred = model(x_val, None)
                     # print(f"We get here for {i}")
                     val_loss = cross_entropy(pred=y_pred, targets=y_val)
                     accum_loss += val_loss.item()
@@ -255,7 +261,7 @@ def calculate_loss(model, data, cfg, current_tokens, device, rng=None, num_iters
                     x = x_s[mini_step]
                     y = y_s[mini_step]
                     with torch.autocast(device_type="cuda", dtype=cfg.dtype):
-                        y_pred = model(x)
+                        y_pred = model(x, None)
                         loss = cross_entropy(pred=y_pred, targets=y)/cfg.grad_accum_steps
                         accum_loss += loss.detach()
 
