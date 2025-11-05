@@ -47,6 +47,7 @@ class Config:
     sky_ladder: bool
     sky_ladder_alpha: float
     sky_ladder_min_window: int
+    sky_ladder_step_interval: int
 
     # Experiment
     experiment_name: str

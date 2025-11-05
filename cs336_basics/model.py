@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 from einops import einsum, rearrange
 from torch import nn as nn
+import torch._dynamo as dynamo
 
 
 class Linear(nn.Module):
@@ -654,6 +655,7 @@ class GatedAttention(nn.Module):
         #self.w2 = Linear(in_features=d_ff, out_features=d_model, device=device, dtype=dtype, set_zero=True)
         #self.w3 = Linear(in_features=d_model, out_features=d_ff, device=device, dtype=dtype)
         self.silu = SILU()
+        self._mask_cache1 = {},
         # self.heads = [Head(head_size=head_size, dim=d_k for _ in range(num_heads)]
         # self.register_buffer(name="tril", tensor=torch.tril(torch.ones((d_model,d_model))))
         if max_sequence_length is None:
@@ -665,6 +667,47 @@ class GatedAttention(nn.Module):
             self.rope = RoPE(theta=theta, d_k=self.d_k, max_sequence_length=max_sequence_length, device=device)
         else:
             self.rope = None
+
+    @dynamo.disable
+    @torch.no_grad()
+    def _get_block_mask(self, S: int, seq_windows: torch.Tensor, device: torch.device) -> torch.Tensor:
+        """
+        Build SkyLadder block-causal mask from fragment edges (seq_windows=[0,...,S]).
+        Returns a boolean mask [S, S]. Minimal, no intradoc, no loops.
+        """
+        # robust lazy cache: never rely on pre-existing attribute type
+        cache = getattr(self, "_sl_mask_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            setattr(self, "_sl_mask_cache", cache)
+
+        # cache key
+        dev_id = device.index if device.type == "cuda" else -1
+        # detaching/toList keeps key hashable & small; stepwise means few keys overall
+        edges_cpu_list = tuple(seq_windows.detach().tolist())
+        key = (int(S), edges_cpu_list, dev_id)
+
+        m = cache.get(key)
+        if m is not None and m.device == device:
+            return m
+
+        # build vectorized mask
+        idx = torch.arange(S, device=device, dtype=torch.int64)  # int64 is safest for bucketize
+        edges = seq_windows.to(device=device, dtype=idx.dtype)
+        # sanity: require edges include 0 and S and be ascending (cheap checks)
+        # (skip raises to stay minimal; assume your scheduler ensures this)
+
+        frag = torch.bucketize(idx, edges, right=False) - 1   # fragment id for each position
+
+        row = idx.view(-1, 1)
+        col = idx.view(1, -1)
+        causal = (col <= row)
+        same  = (frag.view(-1,1) == frag.view(1,-1))
+        mask = (causal & same)  # bool [S,S]
+
+        cache[key] = mask
+        return mask
+
     
 
     def create_depth_specific_attention_mask(self, depth, seq_len, device, dtype):
@@ -699,7 +742,7 @@ class GatedAttention(nn.Module):
         
 
 
-        if seq_windows != None:
+        """if seq_windows != None:
             mha = torch.zeros_like(V)
             for (s0, s1) in zip(seq_windows, seq_windows[1:]):
                 q = Q[:, :, s0:s1, :] # b, h, s, d_k
@@ -709,8 +752,18 @@ class GatedAttention(nn.Module):
                 # mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
                 mha[:, :, s0:s1, :] = scaled_dot_product_attention(q, k, v, mask=self.attention_mask)
             # rearrenge back into original embedding dimension
+        else:"""
+        # Mask only version
+        S = Q.shape[-2]
+        if seq_windows is not None:
+            attn_mask = self._get_block_mask(S, seq_windows, Q.device)
         else:
-            mha = scaled_dot_product_attention(Q, K, V, mask=self.attention_mask)
+            idx = torch.arange(S, device=Q.device)
+            attn_mask = (idx.view(-1,1) >= idx.view(1,-1))  # full causal
+
+        mha = scaled_dot_product_attention(Q, K, V, mask=attn_mask)
+
+        
         mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
         
 
@@ -838,6 +891,7 @@ def softmax(x: torch.Tensor, dimension: int, temp: int = 1):
 
 
 @torch.compile()
+#@dynamo.disable
 def scaled_dot_product_attention(Q, K, V, mask):
     d_k = Q.shape[-1]
     seq_len = Q.shape[-2]
@@ -846,7 +900,8 @@ def scaled_dot_product_attention(Q, K, V, mask):
     attn = einsum(Q, K, "b ... sq d_k, b ... sk d_k -> b ... sq sk") / math.sqrt(d_k)
     # apply mask if included
     if mask is not None:
-        attn = attn.masked_fill(mask[:seq_len, :seq_len] == False, float("-inf"))
+        m = mask.to(bool)
+        attn = attn.masked_fill(~mask, float("-inf"))
     result = einsum(softmax(x=attn, dimension=-1), V, "b ... sq sk, b ... sk d_v -> b ... sq d_v")
 
     return result

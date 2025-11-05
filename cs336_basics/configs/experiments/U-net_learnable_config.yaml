@@ -31,8 +31,9 @@ save_interval: 16100
 scheduler: cosine
 seed: 42
 sky_ladder: true
-sky_ladder_alpha: 0.1
+sky_ladder_alpha: 0.05
 sky_ladder_min_window: 8
+sky_ladder_step_interval: 32
 theta: 10000
 tokenizer_merges_path: data/tokenizer_data/merges_owt_train.pkl
 tokenizer_vocab_path: data/tokenizer_data/vocab_owt_train.pkl

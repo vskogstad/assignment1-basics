@@ -36,9 +36,10 @@ optimizer: "normuon"
 scheduler: "cosine"
 compile_model: true
 grad_accum_steps: 1
-sky_ladder: true
-sky_ladder_alpha: 0.1
+sky_ladder: false
+sky_ladder_alpha: 0.05
 sky_ladder_min_window: 8
+sky_ladder_step_interval: 32
 
 # Experiment configuration
 experiment_name: "U-net_learnable"
