@@ -30,7 +30,7 @@ pre_norm: true
 save_interval: 16100
 scheduler: cosine
 seed: 42
-sky_ladder: true
+sky_ladder: false
 sky_ladder_alpha: 0.05
 sky_ladder_min_window: 8
 sky_ladder_step_interval: 32

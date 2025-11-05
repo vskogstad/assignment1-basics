@@ -656,6 +656,7 @@ class GatedAttention(nn.Module):
         #self.w3 = Linear(in_features=d_model, out_features=d_ff, device=device, dtype=dtype)
         self.silu = SILU()
         self._mask_cache1 = {},
+        self.s = nn.Parameter(torch.ones((num_heads), device=device, dtype=dtype))
         # self.heads = [Head(head_size=head_size, dim=d_k for _ in range(num_heads)]
         # self.register_buffer(name="tril", tensor=torch.tril(torch.ones((d_model,d_model))))
         if max_sequence_length is None:
@@ -672,8 +673,7 @@ class GatedAttention(nn.Module):
     @torch.no_grad()
     def _get_block_mask(self, S: int, seq_windows: torch.Tensor, device: torch.device) -> torch.Tensor:
         """
-        Build SkyLadder block-causal mask from fragment edges (seq_windows=[0,...,S]).
-        Returns a boolean mask [S, S]. Minimal, no intradoc, no loops.
+        !!! LLM code to check skyladder masking. Not usable in real test.
         """
         # robust lazy cache: never rely on pre-existing attribute type
         cache = getattr(self, "_sl_mask_cache", None)
@@ -741,8 +741,8 @@ class GatedAttention(nn.Module):
             K = self.rope(K, token_positions)
         
 
-
-        """if seq_windows != None:
+        """ # Attempt at implementing SkyLadder, horrible MFU, need flash-attention var len to make this work
+        if seq_windows != None:
             mha = torch.zeros_like(V)
             for (s0, s1) in zip(seq_windows, seq_windows[1:]):
                 q = Q[:, :, s0:s1, :] # b, h, s, d_k
@@ -753,14 +753,21 @@ class GatedAttention(nn.Module):
                 mha[:, :, s0:s1, :] = scaled_dot_product_attention(q, k, v, mask=self.attention_mask)
             # rearrenge back into original embedding dimension
         else:"""
-        # Mask only version
-        S = Q.shape[-2]
+        # Mask only version of SkyLadder. Worse than regular training.
+        S, H = Q.shape[-2],Q.shape[-3]
+
         if seq_windows is not None:
             attn_mask = self._get_block_mask(S, seq_windows, Q.device)
         else:
             idx = torch.arange(S, device=Q.device)
             attn_mask = (idx.view(-1,1) >= idx.view(1,-1))  # full causal
-
+        
+        """
+        # Attempt at using ssmax, barely worse than regular training.
+        log_n = torch.log(torch.arange(1, S+1, device=Q.device).view(1, 1, S, 1).to(Q.dtype))
+        factor = self.s.view(1, H, 1, 1)*log_n
+        Q = Q.mul(factor)
+        """
         mha = scaled_dot_product_attention(Q, K, V, mask=attn_mask)
 
         
