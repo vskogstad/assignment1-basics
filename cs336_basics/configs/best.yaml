@@ -28,6 +28,7 @@ weight_decay: 0.1
 warmup_steps: 600
 total_steps: 15800
 cosine_cycle_steps: 15800
+steady_steps: 7000
 betas: [0.9, 0.999]
 eps: 1.0e-8
 muon_momentum: 0.95
@@ -42,7 +43,7 @@ sky_ladder_min_window: 8
 sky_ladder_step_interval: 32
 
 # Experiment configuration
-experiment_name: "U-net_learnable"
+experiment_name: "back_to_cosine"
 seed: 42
 log_interval: 10
 eval_interval: 3000

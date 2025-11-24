@@ -74,7 +74,7 @@ def train(cfg: Config):
     ) 
     optimizer = get_optimizer(cfg=cfg, model=model)
 
-    assert cfg.scheduler == "cosine"  # Not setup to use other schedulers yet.
+    assert cfg.scheduler == "cosine" or cfg.scheduler == "wsd"  # Not setup to use other schedulers yet.
     loss_func = torch.compile(cross_entropy, fullgraph=True)
 
     # Data loading
@@ -160,8 +160,17 @@ def train(cfg: Config):
                 warmup_steps=cfg.warmup_steps,
                 cosine_cycle_steps=cfg.cosine_cycle_steps,
             )
-            for param_group in optimizer.param_groups:
-                param_group["lr"] = new_lr
+        elif cfg.scheduler == "wsd":
+            new_lr = get_lr_wsd(
+                step=step,
+                max_learning_rate=cfg.max_learning_rate,
+                min_learning_rate=cfg.min_learning_rate,
+                warmup_steps=cfg.warmup_steps,
+                steady_steps=cfg.steady_steps,
+                total_steps=cfg.total_steps,
+            )
+        for param_group in optimizer.param_groups:
+            param_group["lr"] = new_lr
 
         optimizer.step()
 
@@ -861,6 +870,23 @@ def get_lr_cosine(
         lr = min_learning_rate + 0.5 * (1 + math.cos(part)) * (max_learning_rate - min_learning_rate)
 
     return lr
+
+def get_lr_wsd(
+    step: int, max_learning_rate: float, min_learning_rate: float, warmup_steps: int, steady_steps: int, total_steps: int,
+):
+    """Returns a learning rate based on cosine annealing"""
+    if step < warmup_steps:  # Warmup
+        lr = step / warmup_steps * max_learning_rate
+    elif step > steady_steps:  # Annealing
+        lr = max_learning_rate - (max_learning_rate - min_learning_rate) * ((step - steady_steps) / (total_steps - steady_steps))
+    # else do nothing
+    else:  # Cosine annealing
+        lr = max_learning_rate
+
+
+
+    return lr
+
 
 @torch.compile()
 def clip_gradient(parameters, max_l2_norm: float):

@@ -36,6 +36,7 @@ class Config:
     warmup_steps: int
     total_steps: int
     cosine_cycle_steps: int | None
+    steady_steps: int | None
     betas: tuple
     eps: float
     muon_momentum: float
