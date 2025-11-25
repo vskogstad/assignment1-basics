@@ -406,12 +406,15 @@ def get_model(cfg: Config, device):
 
 def save_checkpoint(
     model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
+    optimizer: torch.optim.Optimizer | None,
     iteration: int,
     out: str | os.PathLike | BinaryIO | IO[bytes],
 ):
-    checkpoint = {"model": model.state_dict(), "optimizer": optimizer.state_dict(), "iteration": iteration}
+    if optimizer:
+        checkpoint = {"model": model.state_dict(), "optimizer": optimizer.state_dict(), "iteration": iteration}
     # write to output path
+    else:
+        checkpoint = {"model": model.state_dict(), "optimizer": {}, "iteration": iteration}
     print(f"Saving checkpoint to {out}")
     torch.save(checkpoint, out)
 
@@ -432,7 +435,7 @@ def load_checkpoint(
         optimizer.load_state_dict(checkpoint["optimizer"])
         print(f"Loading checkpoint from {src}")
     else:
-        print(f"Loading model from {src} for sampling only.")
+        print(f"Loading model from {src} for sampling/validation only.")
     return checkpoint["iteration"]
 
 

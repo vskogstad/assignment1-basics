@@ -47,7 +47,7 @@ experiment_name: "back_to_cosine"
 seed: 42
 log_interval: 10
 eval_interval: 3000
-save_interval: 16100
+save_interval: 50
 output_dir: "cs336_basics/configs/experiments"
 wandb_project: "H100-sxm5-OWT-testruns"
 from_checkpoint: null #"cs336_basics/checkpoints/baseline_2000.pth"
