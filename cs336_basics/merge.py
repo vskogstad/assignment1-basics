@@ -12,6 +12,7 @@ from cs336_basics.config import Config, get_parser
 
 class Evaluator():
     # Loads checkpoints, merges them, then does full validation
+    @staticmethod
     def validate_model_checkpoint(
         checkpoint_path,
         cfg: Config,
@@ -30,6 +31,7 @@ class Evaluator():
         return val_loss
 
 class CheckpointManager():
+    @staticmethod
     def discover_checkpoints(base_name, granularity, n_checkpoints):
         """Can fail for all kinds of reasons if data is not correctly formatted or stored in the right order"""
 
@@ -51,27 +53,41 @@ class CheckpointManager():
 
 
 class ModelMerger():
+    @staticmethod
     def compute_merge_weights(stratergy_name, n_checkpoints):
-        assert stratergy_name == 'linear'
-        return [1/n_checkpoints for i in range(n_checkpoints)]
+        if stratergy_name == 'linear':
+            return [1/n_checkpoints for i in range(n_checkpoints)]
+        if stratergy_name == "sqrt":
+            raise NotImplementedError()
 
 
-
-    def merge_checkpoints(checkpoint_paths, weights, stratergy, output):
+    @staticmethod
+    def merge_checkpoints(checkpoint_paths, weights, output):
         # go through checkpoints one by one to build up a merged model state
         merged_state = {}
-        for checkpoint in checkpoint_paths:
-            checkpoint_states = load
-            for key in checkpoint_states[0].keys():
-                pass
-    
-    
-        # save merged checkpoint
+        assert len(checkpoint_paths) == len(weights) # Must have same amount of weights and checkpoints
+        for src, weight in zip(checkpoint_paths, weights):
+            # load checkpoint
+            if not os.path.exists(src):
+                raise FileNotFoundError(f"Checkpoint not found at {src}")
+            checkpoint = torch.load(src) if torch.cuda.is_available() else torch.load(src, map_location=torch.device("cpu"))
+            # update state
+            state_dict = checkpoint["model"]
+            if merged_state is None:
+                merged_state = {k: v * weight for k, v in state_dict.items()}
+            else:
+                for k, v in state_dict.items():
+                    merged_state[k] += v * weight
+        
+        checkpoint = {"model": merged_state, "optimizer": {}, "iteration": 0}
+        print(f"Saving merged checkpoint to {output}")
+        torch.save(checkpoint, output)
 
-        return output_path
+        return
 
 class ExperimentRunner():
-    def run_experiment(base_name: str, n_checkpoints: int, granularity: int, stratergy: str, config):
+    @staticmethod
+    def run_experiment(base_name: str, n_checkpoints: int, granularity: int, stratergy: str, cfg):
         """Single experiment"""
         output_path = f"{base_name}-merged_{stratergy}_{n_checkpoints}_{granularity}"
         checkpoint_paths = CheckpointManager.discover_checkpoints(base_name, granularity, n_checkpoints)
@@ -79,17 +95,19 @@ class ExperimentRunner():
             return None
 
         merge_weights = ModelMerger.compute_merge_weights(stratergy, n_checkpoints)
-        ModelMerger.merge_checkpoints(checkpoint_paths, merge_weights, stratergy, output_path)
-        loss = Evaluator.validate_model_checkpoint(output_path, config)
+        ModelMerger.merge_checkpoints(checkpoint_paths, merge_weights, output_path)
+        loss = Evaluator.validate_model_checkpoint(output_path, cfg)
         return loss
-
-    def run_sweep():   
+    
+    @staticmethod
+    def run_sweep(base_name, checkpoint_ranges, stratergies, granularities, config):   
         # runs multiple merge_checkpoints to test various alternatives 
         results = []
-        for num_checkpoints in checkpoint_range:
-            for strat in statergies:
-                result = merge_checkpoints(base_name, num_checkpoints, decay)
-                results.append([num_checkpoints, decay, result])
+        for num_checkpoints in checkpoint_ranges:
+            for granularity in granularities:
+                for stratergy in stratergies:
+                    loss = ExperimentRunner.run_experiment(base_name = base_name, n_checkpoints = num_checkpoints, granularity = granularity, stratergy = stratergy, config=config)
+                    results.append([num_checkpoints, stratergy, granularity, loss])
 
         for result in results:
             print(result)
@@ -108,5 +126,4 @@ if __name__ == "__main__":
     
     CheckpointManager.discover_checkpoints(base_name = "cs336_basics/configs/experiments/back_to_cosine", granularity = 50, n_checkpoints = 2)
     import sys; sys.exit();
-    exp = ExperimentRunner()
-    exp.run_experiment(base_name = "cs336_basics/configs/experiments/back_to_cosine", n_checkpoints = 2, granularity = 50, stratergy = 'linear', config=config)
+    ExperimentRunner.run_experiment(base_name = "cs336_basics/configs/experiments/back_to_cosine", n_checkpoints = 2, granularity = 50, stratergy = 'linear', config=config)

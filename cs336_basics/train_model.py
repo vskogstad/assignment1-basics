@@ -221,7 +221,7 @@ def train(cfg: Config):
             # model.sample(tokenizer=tokenizer, prompt="It was a nice day")
 
         # checkpointing
-        if step % cfg.save_interval == 0 and step != 0:
+        if step % cfg.save_interval == 0 and step >= cfg.initial_save_step:
             save_checkpoint(
                 model=model,
                 optimizer=optimizer,

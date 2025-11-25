@@ -46,6 +46,7 @@ sky_ladder_step_interval: 32
 experiment_name: "back_to_cosine"
 seed: 42
 log_interval: 10
+initial_save_step: 50
 eval_interval: 3000
 save_interval: 50
 output_dir: "cs336_basics/configs/experiments"

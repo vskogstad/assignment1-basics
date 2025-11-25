@@ -56,6 +56,7 @@ class Config:
     log_interval: int
     eval_interval: int
     save_interval: int
+    initial_save_step: int
     output_dir: str
     wandb_project: None | str
     from_checkpoint: None | str
