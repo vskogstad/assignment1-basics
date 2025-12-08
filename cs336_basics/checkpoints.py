@@ -2,6 +2,8 @@ import argparse
 import glob
 import os
 
+import regex as re
+
 import numpy as np
 import torch
 
@@ -27,7 +29,7 @@ class Evaluator:
         model = get_model(cfg, device) if device == torch.device("cpu") else torch.compile(get_model(cfg, device))
 
         load_checkpoint(checkpoint_path, model)
-        val_loss = calculate_loss(model, val_data, cfg, 0, device, rng=None, num_iters=15)
+        val_loss = calculate_loss(model, val_data, cfg, 0, device, rng=None, num_iters=150)
         print(f"The validation loss is {val_loss:.4f}")
         return val_loss
 
@@ -55,7 +57,7 @@ class CheckpointManager:
 
 class ModelGrower:
     @staticmethod
-    def grow_checkpoint(src, output):
+    def grow_checkpoint(src, size, output):
         #
         grown_model = {}
         grown_optimizer = {}
@@ -67,18 +69,27 @@ class ModelGrower:
         model_dict = checkpoint["model"]
         opt_dict = checkpoint["optimizer"]
         step = checkpoint["iteration"]
+        layer_pattern = re.compile(r'(_orig_mod\.layers\.)(\d+)(\..*)')
+        layer_no = None
 
-        # growth logic to be done (Just plain copy/print for now)
+        # growth logic (stacking two models on top of each other)
         for k, v in model_dict.items():
+            match = re.search(layer_pattern, k)
+            if match:
+                prefix = match.group(1)      # '_orig_mod.layers.'
+                layer_num = int(match.group(2))  # 0, 1, 2, ...
+                suffix = match.group(3)      # '.mha.Wq.W' etc.
+                
+                new_key = f"{prefix}{layer_num + size}{suffix}"
+                grown_model[new_key] = v
+                
             grown_model[k] = v
-            print(k)
+            layer_no = None
 
-        """
-        for k, v in opt_dict.items():
-            grown_optimizer[k] = v
-            print(k)"""
+        
 
-        checkpoint = {"model": grown_model, "optimizer": grown_optimizer, "iteration": step}
+
+        checkpoint = {"model": grown_model, "optimizer": None, "iteration": step}
         print(f"Saving grown checkpoint to {output}")
         torch.save(checkpoint, output)
 
@@ -165,14 +176,15 @@ if __name__ == "__main__":
     config = Config.from_yaml(args.config)
     config.update_from_args(args)
 
-    ModelGrower.grow_checkpoint(
-        src="cs336_basics/configs/experiments/6_layers_deep_250.pth", output="cs336_basics/configs/experiments/12_layers_deep_250.pth",
+    """ModelGrower.grow_checkpoint(
+        src="cs336_basics/configs/experiments/6_layers_deep_4800.pth", size = 6, output="cs336_basics/configs/experiments/12_layers_deep_cp.pth",
     )
-    import sys; sys.exit();
+    import sys; sys.exit();"""
     ExperimentRunner.run_experiment(
-        base_name="cs336_basics/configs/experiments/back_to_cosine",
-        n_checkpoints=2,
-        granularity=50,
+        base_name="cs336_basics/configs/experiments/6_layers_deep",
+        n_checkpoints=10,
+        granularity=200,
         stratergy="linear",
         cfg=config,
     )
+    # uv run cs336_basics/train_model.py --config cs336_basics/configs/stack.yaml --num_layers 12 --from_checkpoint 12_layers_deep_250.pth

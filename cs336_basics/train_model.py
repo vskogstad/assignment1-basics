@@ -103,11 +103,11 @@ def train(cfg: Config):
     chunk_steps = 0
     chunk_loss = 0
 
-    # Load from checkpoint
+    # Load from checkpoint without optimizer info
     if cfg.from_checkpoint:
         source = os.path.join(cfg.output_dir, cfg.from_checkpoint)
-        step = (
-            load_checkpoint(src=source, model=model, optimizer=optimizer) + 1
+        current_step = (
+            load_checkpoint(src=source, model=model, optimizer=None) + 1
         )  # increment by one, this step has already been done
     
     
@@ -212,7 +212,10 @@ def train(cfg: Config):
 
         # validation
         if step % cfg.eval_interval == 0 and step != 0:
-            print(f"skip: {model.skip}, lambdas: {model.lambdas}")
+            if cfg.use_skip:
+                print(f"skip: {model.skip}")
+            if cfg.use_value_embedding:
+                print(f"lambdas: {model.lambdas}")
             val_loss = calculate_loss(model, val_data, cfg, current_tokens, device, rng=rng, num_iters=15)
             print(f"The validation loss is {val_loss:.4f}")
             if cfg.wandb_project:
@@ -224,7 +227,7 @@ def train(cfg: Config):
         if step % cfg.save_interval == 0 and step >= cfg.initial_save_step:
             save_checkpoint(
                 model=model,
-                optimizer=optimizer,
+                optimizer=None,
                 iteration=step,
                 out=f"{cfg.output_dir}/{cfg.experiment_name}_{step}.pth",
             )
@@ -950,7 +953,13 @@ if __name__ == "__main__":
     # load config
     config = Config.from_yaml(args.config)
     config.update_from_args(args)
-    calculate_loss()
+
+    # train the model
+    train(cfg=config)
+
+    import sys
+
+    sys.exit()
     sample_from_model_checkpoint(
         model_path="cs336_basics/configs/experiments/U-net_learnable_10.pth",
         cfg=config,
@@ -965,12 +974,7 @@ if __name__ == "__main__":
     os.makedirs(config.output_dir, exist_ok=True)
     config.save(os.path.join(config.output_dir, f"{config.experiment_name}_config.yaml"))
 
-    # train the model
-    train(cfg=config)
-
-    import sys
-
-    sys.exit()
+    
     # Sampling snippet
     sample_from_model_checkpoint(
         model_path="cs336_basics/configs/experiments/U-net_learnable_10.pth",

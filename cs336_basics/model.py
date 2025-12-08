@@ -351,7 +351,7 @@ class Transformer(nn.Module):
             skip_weights = self.skip
             for i in range(len(self.layers)):
                 ve_for_layer = ve if i >= len(self.layers) - 2 and self.use_value_embedding else None  # Only last 2 layers
-                lambda_for_layer = lambdas[i] if self.value_embedding else [0.5, 0.5]
+                lambda_for_layer = lambdas[i] if self.use_value_embedding else [0.5, 0.5]
                 if i >= mid:
                     x = x + skip_weights[i-mid] * skip_connections.pop()
                 x = self.layers[i](x, ve_for_layer, lambda_for_layer, seq_windows) # ve == first layer, we also pass it on to bottom 6 layers (layers 6-11)
@@ -360,7 +360,7 @@ class Transformer(nn.Module):
         else: # no U-net
             for i in range(len(self.layers)):
                 ve_for_layer = ve if i >= len(self.layers) - 2 and self.use_value_embedding else None  # Only last 2 layers
-                lambda_for_layer = lambdas[i] if self.value_embedding else [0.5, 0.5]
+                lambda_for_layer = lambdas[i] if self.use_value_embedding else [0.5, 0.5]
                 x = self.layers[i](x, ve_for_layer, lambda_for_layer, seq_windows)
 
         x = self.rmsn_f(x)

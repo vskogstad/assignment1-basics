@@ -6,6 +6,8 @@ data/training_data/owt_valid.npy
 data/training_data/tiny_train.npy
 cs336_basics/configs/experiments/checkpoints/
 
+# checkpoints
+*.pth
 
 # Scalene output files
 profile.json
