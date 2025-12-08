@@ -399,6 +399,8 @@ def get_model(cfg: Config, device):
             pre_norm=cfg.pre_norm,
             layer_norm=cfg.layer_norm,
             glu=cfg.glu,
+            use_skip=cfg.use_skip,
+            use_value_embedding=cfg.use_value_embedding,
         )
     else:
         raise NotImplementedError("Not implemented loading for model {cfg.model_name}")

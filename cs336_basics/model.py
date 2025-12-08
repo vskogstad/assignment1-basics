@@ -295,11 +295,17 @@ class Transformer(nn.Module):
         glu: bool = True,
         pre_norm: bool = True,
         layer_norm: bool = True,
+        use_skip: bool = True,
+        use_value_embedding: bool= True,
+        
     ):
         super().__init__()
         self.embedding = Embedding(num_embeddings=vocab_size, embeddings_dim=d_model, device=device, dtype=dtype)
-        self.value_embedding = Embedding(num_embeddings=vocab_size, embeddings_dim=d_model, device=device, dtype=dtype)
-        self.lambdas = nn.Parameter(torch.ones(num_layers, 2, device=device) * 0.5)
+        self.use_skip = use_skip
+        self.use_value_embedding = use_value_embedding
+        if use_value_embedding:
+            self.value_embedding = Embedding(num_embeddings=vocab_size, embeddings_dim=d_model, device=device, dtype=dtype)
+            self.lambdas = nn.Parameter(torch.ones(num_layers, 2, device=device) * 0.5)
 
         block_module = self.get_block_module(
             glu, pre_norm, layer_norm
@@ -323,31 +329,39 @@ class Transformer(nn.Module):
         self.rmsn_f = RMSNorm(d_model=d_model, eps=torch.finfo(torch.bfloat16).eps, device=device, dtype=dtype)
         self.lm_head = Linear(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype, set_zero=True)
         self.device = device
-        self.skip = nn.Parameter(torch.ones(num_layers // 2, device=device) )
+        if self.use_skip:
+            self.skip = nn.Parameter(torch.ones(num_layers // 2, device=device) )
 
     def forward(self, x: torch.Tensor, seq_windows: torch.tensor):
-        # Extra value embeddings mixed in
-        ve = self.value_embedding(x)
-        ve = rearrange(ve, "b s (head d_v) -> b head s d_v", head=self.layers[0].mha.num_heads, d_v=self.layers[0].mha.d_v)
-        
-        #ve = ve.contiguous() 
-
-        lambdas = self.lambdas
-
+        if self.use_value_embedding:
+            # Extra value embeddings mixed in
+            ve = self.value_embedding(x)
+            ve = rearrange(ve, "b s (head d_v) -> b head s d_v", head=self.layers[0].mha.num_heads, d_v=self.layers[0].mha.d_v)
+            lambdas = self.lambdas
+        else:
+            ve = None, 
+            lambdas = None
 
         x = self.embedding(x)
 
         # U-net from NanoGPT speedrun:
-        mid = len(self.layers) // 2
-        skip_connections = []
-        skip_weights = self.skip
-        for i in range(len(self.layers)):
-            ve_for_layer = ve if i >= len(self.layers) - 2 else None  # Only last 2 layers
-            if i >= mid:
-                x = x + skip_weights[i-mid] * skip_connections.pop()
-            x = self.layers[i](x, ve_for_layer, lambdas[i], seq_windows) # ve == first layer, we also pass it on to bottom 6 layers (layers 6-11)
-            if i < mid: # after x = self.layers to add skip connection from output of block
-                skip_connections.append(x)
+        if self.use_skip:
+            mid = len(self.layers) // 2
+            skip_connections = []
+            skip_weights = self.skip
+            for i in range(len(self.layers)):
+                ve_for_layer = ve if i >= len(self.layers) - 2 and self.use_value_embedding else None  # Only last 2 layers
+                lambda_for_layer = lambdas[i] if self.value_embedding else [0.5, 0.5]
+                if i >= mid:
+                    x = x + skip_weights[i-mid] * skip_connections.pop()
+                x = self.layers[i](x, ve_for_layer, lambda_for_layer, seq_windows) # ve == first layer, we also pass it on to bottom 6 layers (layers 6-11)
+                if i < mid: # after x = self.layers to add skip connection from output of block
+                    skip_connections.append(x)
+        else: # no U-net
+            for i in range(len(self.layers)):
+                ve_for_layer = ve if i >= len(self.layers) - 2 and self.use_value_embedding else None  # Only last 2 layers
+                lambda_for_layer = lambdas[i] if self.value_embedding else [0.5, 0.5]
+                x = self.layers[i](x, ve_for_layer, lambda_for_layer, seq_windows)
 
         x = self.rmsn_f(x)
         x = self.lm_head(x)

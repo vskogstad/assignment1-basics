@@ -1,7 +1,7 @@
 #model configuration
 model_name: "transformer"
 vocab_size: 32000 # 32768
-num_layers: 12
+num_layers: 6
 num_heads: 8
 d_model: 1024
 d_ff: 4096
@@ -11,9 +11,8 @@ pre_norm: true
 layer_norm: true
 glu: true
 num_kv_groups: null
-use_skip: true
-use_value_embedding: true
-
+use_skip: false
+use_value_embedding: false
 # data loading
 train_dataset_path: "data/training_data/owt_train.npy"
 val_dataset_path: "data/training_data/owt_valid.npy"
@@ -36,7 +35,7 @@ eps: 1.0e-8
 muon_momentum: 0.95
 grad_clip_norm: 1.0
 optimizer: "normuon"
-scheduler: "cosine"
+scheduler: "wsd"
 compile_model: true
 grad_accum_steps: 1
 sky_ladder: false
@@ -50,7 +49,7 @@ seed: 42
 log_interval: 10
 initial_save_step: 50
 eval_interval: 3000
-save_interval: 25000
+save_interval: 150
 output_dir: "cs336_basics/configs/experiments"
 wandb_project: "H100-sxm5-OWT-testruns"
 from_checkpoint: null #"cs336_basics/checkpoints/baseline_2000.pth"
