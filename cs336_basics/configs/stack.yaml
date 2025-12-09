@@ -27,8 +27,8 @@ min_learning_rate: 1.0e-4
 max_learning_rate: 0.0050
 weight_decay: 0.1
 warmup_steps: 50
-total_steps: 12500
-cosine_cycle_steps: 12500
+total_steps: 18500
+cosine_cycle_steps: 18500
 steady_steps: 5000
 betas: [0.9, 0.999]
 eps: 1.0e-8
@@ -48,8 +48,8 @@ experiment_name: "6_layers_deep"
 seed: 42
 log_interval: 10
 initial_save_step: 50
-eval_interval: 500
-save_interval: 12000
+eval_interval: 1000
+save_interval: 19000
 output_dir: "cs336_basics/configs/experiments"
 wandb_project: "H100-sxm5-OWT-testruns"
 from_checkpoint: null #"cs336_basics/checkpoints/baseline_2000.pth"
