@@ -1,7 +1,7 @@
 #model configuration
 model_name: "transformer"
 vocab_size: 32000 # 32768
-num_layers: 4
+num_layers: 12
 num_heads: 8
 d_model: 1024
 d_ff: 4096
@@ -11,9 +11,8 @@ pre_norm: true
 layer_norm: true
 glu: true
 num_kv_groups: null
-use_skip: false
-use_value_embedding: false
-
+use_skip: true
+use_value_embedding: true
 # data loading
 train_dataset_path: "data/training_data/owt_train.npy"
 val_dataset_path: "data/training_data/owt_valid.npy"
@@ -23,29 +22,29 @@ tokenizer_merges_path: "data/tokenizer_data/merges_owt_train.pkl"
 
 # Training configuration
 dtype: "bfloat16"
-batch_size: 128
+batch_size: 64
 min_learning_rate: 1.0e-4
-max_learning_rate: 0.0050
+max_learning_rate: 0.0030
 weight_decay: 0.1
-warmup_steps: 300
-total_steps: 2000
-cosine_cycle_steps: 18500
-steady_steps: 2000
+warmup_steps: 14700
+total_steps: 17700
+cosine_cycle_steps: 17700
+steady_steps: 5000
 betas: [0.9, 0.999]
 eps: 1.0e-8
 muon_momentum: 0.95
 grad_clip_norm: 1.0
 optimizer: "normuon"
-scheduler: "wsd"
+scheduler: "cosine"
 compile_model: true
-grad_accum_steps: 1
+grad_accum_steps: 2
 sky_ladder: false
 sky_ladder_alpha: 0.05
 sky_ladder_min_window: 8
 sky_ladder_step_interval: 32
 
 # Experiment configuration
-experiment_name: "6_layers_deep"
+experiment_name: "less_wd3"
 seed: 42
 log_interval: 10
 initial_save_step: 50

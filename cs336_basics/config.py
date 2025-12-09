@@ -61,6 +61,7 @@ class Config:
     initial_save_step: int
     output_dir: str
     wandb_project: None | str
+    wandb_resume: None | str
     from_checkpoint: None | str
 
     @classmethod
@@ -123,6 +124,7 @@ def get_parser():
     parser.add_argument("--num_layers", type=int)
     parser.add_argument("--num_heads", type=int)
     parser.add_argument("--context_length", type=int)
+    parser.add_argument("--wandb_resume", type=str)
     
 
     return parser

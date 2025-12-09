@@ -82,6 +82,7 @@ class ModelGrower:
                 
                 new_key = f"{prefix}{layer_num + size}{suffix}"
                 grown_model[new_key] = v
+
                 
             grown_model[k] = v
             layer_no = None
@@ -168,6 +169,11 @@ class ExperimentRunner:
 
 if __name__ == "__main__":
     # test_merging_stratergy("wsm", [8, 12, 16, 20], ["linear"]) # for running a sweep of merging stratergies
+    ModelGrower.grow_checkpoint(
+        src="cs336_basics/configs/experiments/to_grow.pth", size = 12, output="cs336_basics/configs/experiments/grown.pth",
+    )
+    import sys; sys.exit();
+
 
     parser = get_parser()
     args = parser.parse_args()
@@ -176,10 +182,7 @@ if __name__ == "__main__":
     config = Config.from_yaml(args.config)
     config.update_from_args(args)
 
-    """ModelGrower.grow_checkpoint(
-        src="cs336_basics/configs/experiments/6_layers_deep_4800.pth", size = 6, output="cs336_basics/configs/experiments/12_layers_deep_cp.pth",
-    )
-    import sys; sys.exit();"""
+    
     ExperimentRunner.run_experiment(
         base_name="cs336_basics/configs/experiments/6_layers_deep",
         n_checkpoints=10,

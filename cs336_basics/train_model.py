@@ -97,7 +97,23 @@ def train(cfg: Config):
     # Initialize logging
     if cfg.wandb_project:
         wandb.login()
-        run = wandb.init(project=cfg.wandb_project, config=asdict(cfg))
+        
+        if cfg.wandb_resume:
+            # Resume existing run
+            run = wandb.init(
+                project=cfg.wandb_project, 
+                id=args.wandb_resume,
+                resume="must",  # fail if run doesn't exist
+                config=asdict(cfg)
+            )
+        else:
+            # Start new run, use experiment_name as id for easy resuming later
+            run = wandb.init(
+                project=cfg.wandb_project,
+                id=cfg.experiment_name,  # makes it easy to resume by name
+                name=cfg.experiment_name,
+                config=asdict(cfg)
+            )
     current_step = 0
     current_tokens = 0
     chunk_steps = 0
@@ -107,9 +123,9 @@ def train(cfg: Config):
     if cfg.from_checkpoint:
         source = os.path.join(cfg.output_dir, cfg.from_checkpoint)
         current_step = (
-            load_checkpoint(src=source, model=model, optimizer=None) + 1
+            load_checkpoint(src=source, model=model, optimizer=None, strict=False) + 1
         )  # increment by one, this step has already been done
-    
+        current_tokens = current_step * cfg.batch_size * cfg.context_length
     
     
     for step in range(current_step, cfg.total_steps):
@@ -144,7 +160,7 @@ def train(cfg: Config):
                 x = x_s[mini_step]
                 y = y_s[mini_step]
                 with torch.autocast(device_type="cuda", dtype=cfg.dtype):
-                    y_pred = model(x)
+                    y_pred = model(x, seq_windows)
                     loss = loss_func(pred=y_pred, targets=y)/cfg.grad_accum_steps
                     loss_accum += loss.detach()
                     loss.backward()
@@ -235,10 +251,16 @@ def train(cfg: Config):
     if cfg.wandb_project:
         run.finish()
     print(f"Total time {timeit.default_timer() - t_start:3f} seconds spent.")
-    
+    save_checkpoint(
+                model=model,
+                optimizer=None,
+                iteration=step,
+                out="cs336_basics/configs/experiments/to_grow.pth",
+            )
     # Do full validation after training model
-    val_loss = calculate_loss(model, val_data, cfg, current_tokens, device, rng=rng)
-    print(f"The full validation loss is {val_loss:.4f}")
+    if cfg.wandb_resume:
+        val_loss = calculate_loss(model, val_data, cfg, current_tokens, device, rng=rng)
+        print(f"The full validation loss is {val_loss:.4f}")
 
 
 
@@ -428,6 +450,7 @@ def load_checkpoint(
     src: str | os.PathLike | BinaryIO | IO[bytes],
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer | None = None,
+    strict: bool = True
 ):
     if not os.path.exists(src):
         raise FileNotFoundError(f"Checkpoint not found at {src}")
@@ -435,9 +458,9 @@ def load_checkpoint(
         checkpoint = torch.load(src)
     else:
         checkpoint = torch.load(src, map_location=torch.device("cpu"))
-    model.load_state_dict(checkpoint["model"])
+    model.load_state_dict(checkpoint["model"], strict=strict)
     if optimizer:
-        optimizer.load_state_dict(checkpoint["optimizer"])
+        optimizer.load_state_dict(checkpoint["optimizer"], strict=strict)
         print(f"Loading checkpoint from {src}")
     else:
         print(f"Loading model from {src} for sampling/validation only.")

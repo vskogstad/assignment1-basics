@@ -305,7 +305,9 @@ class Transformer(nn.Module):
         self.use_value_embedding = use_value_embedding
         if use_value_embedding:
             self.value_embedding = Embedding(num_embeddings=vocab_size, embeddings_dim=d_model, device=device, dtype=dtype)
-            self.lambdas = nn.Parameter(torch.ones(num_layers, 2, device=device) * 0.5)
+            self.lambdas = nn.Parameter(torch.tensor(
+                [[1.0, 0.0]] * num_layers, device=device, dtype=dtype
+            ))
 
         block_module = self.get_block_module(
             glu, pre_norm, layer_norm
@@ -330,7 +332,7 @@ class Transformer(nn.Module):
         self.lm_head = Linear(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype, set_zero=True)
         self.device = device
         if self.use_skip:
-            self.skip = nn.Parameter(torch.ones(num_layers // 2, device=device) )
+            self.skip = nn.Parameter(torch.zeros(num_layers // 2, device=device) )
 
     def forward(self, x: torch.Tensor, seq_windows: torch.tensor):
         if self.use_value_embedding:

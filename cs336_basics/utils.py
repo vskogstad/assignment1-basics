@@ -19,6 +19,38 @@ def download_training_file(file, filepath):
         print(f"Failed dowloading: {file} (exit code: {e.returncode})")
 
 
+import torch
+import matplotlib.pyplot as plt
+
+
+def weight_cosine_sim(checkpoint, layer_i, layer_j, param_name="mha.Wq.W"):
+    w_i = checkpoint[f"_orig_mod.layers.{layer_i}.{param_name}"].flatten().float()
+    w_j = checkpoint[f"_orig_mod.layers.{layer_j}.{param_name}"].flatten().float()
+    return (w_i @ w_j) / (w_i.norm() * w_j.norm())
+
+
+
+def analyze_layer_similarity(checkpoint_path):
+    ckpt = torch.load(checkpoint_path, map_location="cpu")["model"]
+    num_layers = max(int(k.split(".")[2]) for k in ckpt if "layers." in k) + 1
+    
+    # Build similarity matrix for Wq weights
+    sim_matrix = torch.zeros(num_layers, num_layers)
+    for i in range(num_layers):
+        for j in range(num_layers):
+            sim_matrix[i, j] = weight_cosine_sim(ckpt, i, j, "mha.Wq.W")
+    
+    plt.imshow(sim_matrix, cmap="coolwarm", vmin=-1, vmax=1)
+    plt.colorbar(label="Cosine Similarity")
+    plt.xlabel("Layer")
+    plt.ylabel("Layer")
+    plt.title("Layer Weight Similarity")
+    plt.savefig("layer_similarity.png")
+    
+    return sim_matrix
+
+
+
 
 class ResourceConfig:
     def __init__(
@@ -140,6 +172,11 @@ def step_law_lr(len_data, non_embedding_params, context_length):
 
 
 if __name__ == "__main__":
+    # Compare before and after training
+    sim_at_growth = analyze_layer_similarity("cs336_basics/configs/experiments/grown.pth")
+    #sim_after_training = analyze_layer_similarity("cs336_basics/configs/experiments/to_grow.pth")
+    import sys; sys.exit()
+
     gpt2xl_cfg = ResourceConfig(
         vocab_size=50257, context_length=1024, num_layers=48, d_model=1600, num_heads=25, d_ff=6400
     )
