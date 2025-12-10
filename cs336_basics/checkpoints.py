@@ -103,7 +103,7 @@ class ModelMerger:
         if stratergy_name == "linear":
             return [1 / n_checkpoints for _ in range(n_checkpoints)]
         if stratergy_name == "sqrt":
-            raise NotImplementedError()
+            return [1-math.sqrt(n) for n in range(n_checkpoints)]
 
     @staticmethod
     def merge_checkpoints(checkpoint_paths, weights, output):
@@ -114,6 +114,7 @@ class ModelMerger:
             # load checkpoint
             if not os.path.exists(src):
                 raise FileNotFoundError(f"Checkpoint not found at {src}")
+            print(f"Got here {src}")
             checkpoint = (
                 torch.load(src) if torch.cuda.is_available() else torch.load(src, map_location=torch.device("cpu"))
             )
@@ -169,10 +170,10 @@ class ExperimentRunner:
 
 if __name__ == "__main__":
     # test_merging_stratergy("wsm", [8, 12, 16, 20], ["linear"]) # for running a sweep of merging stratergies
-    ModelGrower.grow_checkpoint(
-        src="cs336_basics/configs/experiments/to_grow.pth", size = 12, output="cs336_basics/configs/experiments/grown.pth",
-    )
-    import sys; sys.exit();
+    ##ModelGrower.grow_checkpoint(
+    #    src="cs336_basics/configs/experiments/to_grow.pth", size = 12, output="cs336_basics/configs/experiments/grown.pth",
+    #)
+    #import sys; sys.exit();
 
 
     parser = get_parser()
@@ -184,9 +185,9 @@ if __name__ == "__main__":
 
     
     ExperimentRunner.run_experiment(
-        base_name="cs336_basics/configs/experiments/6_layers_deep",
-        n_checkpoints=10,
-        granularity=200,
+        base_name="cs336_basics/configs/experiments/steady-max-LR",
+        n_checkpoints=6,
+        granularity=500,
         stratergy="linear",
         cfg=config,
     )
