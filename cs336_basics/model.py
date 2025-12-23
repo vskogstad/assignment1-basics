@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from einops import einsum, rearrange
 from torch import nn as nn
 import torch._dynamo as dynamo
+from cs336_basics.flash_attention_kernel import TritonFlashAttentionAutogradFunction
 
 
 class Linear(nn.Module):
@@ -732,13 +733,14 @@ class GatedAttention(nn.Module):
         #value_embedding = rearrange(value_embedding, "b s (head d_v) -> b head s d_v", d_v=self.d_v)
         if value_embedding is not None:  # Only mix if provided
             V = lambdas[0] * V + lambdas[1] * value_embedding
+            V = V.to(Q.dtype)
 
         if self.rope != None:  # We are using RoPE
             if token_positions == None:  # create default 0, 1, .... positions if nothing else is supplied
                 token_positions = torch.arange(Q.shape[-2])  # Seems brittle
             Q, K = self.q_norm(Q), self.k_norm(K) # QK norm. own variant of speedrun implementation from @Grad62304977
-            Q = self.rope(Q, token_positions)
-            K = self.rope(K, token_positions)
+            Q = self.rope(Q, token_positions).to(V.dtype)
+            K = self.rope(K, token_positions).to(V.dtype)
         
 
         """ # Attempt at implementing SkyLadder, horrible MFU, need flash-attention var len to make this work
@@ -768,10 +770,22 @@ class GatedAttention(nn.Module):
         factor = self.s.view(1, H, 1, 1)*log_n
         Q = Q.mul(factor)
         """
-        mha = scaled_dot_product_attention(Q, K, V, mask=attn_mask)
+        #from torch.nn.functional import scaled_dot_product_attention as FA_torch
+        #mha = FA_torch(Q, K, V, is_causal=True)
+        #Flatten Q, K and V
+        b, h, s, d = Q.shape
+        Q_flat = Q.reshape(b * h, s, d)
+        K_flat = K.reshape(b * h, s, d)
+        V_flat = V.reshape(b * h, s, d)
+        mha = TritonFlashAttentionAutogradFunction.apply(Q_flat, K_flat, V_flat, True)
+        mha = rearrange(mha, "(b head )s d_v -> b s (head d_v)", head=h)
+        
+        
+
+        #mha = scaled_dot_product_attention(Q, K, V, mask=attn_mask)
 
         
-        mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
+        #mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
         
 
         # SwiGLU(x) = W2(SiLU(xW1) ⊙ xW3)
