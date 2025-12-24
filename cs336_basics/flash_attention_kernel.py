@@ -672,7 +672,8 @@ class TritonFlashAttentionAutogradFunction(torch.autograd.Function):
             K_TILE_SIZE, # comment out if autotuning.
             
         )
-
+        # In forward, before returning:
+        #print(f"O_ptr dtype: {O_ptr.dtype}, Q_ptr dtype: {Q_ptr.dtype}")
         ctx.save_for_backward(Q_ptr, K_ptr, V_ptr, L_ptr, O_ptr)
         return O_ptr
 
@@ -808,6 +809,10 @@ class TritonFlashAttentionAutogradFunction(torch.autograd.Function):
 
         )
 
+
+        # In backward, before returning:
+        #print(f"dQ dtype: {dQ_ptr.dtype}, dK dtype: {dK_ptr.dtype}, dV dtype: {dV_ptr.dtype}")
+        #print(f"Expected dtype: {Q_ptr.dtype}")
         return dQ_ptr, dK_ptr, dV_ptr, None
 
 

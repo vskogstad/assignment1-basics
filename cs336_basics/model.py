@@ -770,23 +770,27 @@ class GatedAttention(nn.Module):
         factor = self.s.view(1, H, 1, 1)*log_n
         Q = Q.mul(factor)
         """
-        #from torch.nn.functional import scaled_dot_product_attention as FA_torch
-        #mha = FA_torch(Q, K, V, is_causal=True)
+        # 1. Triton kernel custom:
         #Flatten Q, K and V
         b, h, s, d = Q.shape
         Q_flat = Q.reshape(b * h, s, d)
         K_flat = K.reshape(b * h, s, d)
         V_flat = V.reshape(b * h, s, d)
-        mha = TritonFlashAttentionAutogradFunction.apply(Q_flat, K_flat, V_flat, True)
+        print(data_ptr(Q_flat) == data_ptr(Q))
+        mha = torch.compile(TritonFlashAttentionAutogradFunction.apply(Q_flat, K_flat, V_flat, True))
+        
         mha = rearrange(mha, "(b head )s d_v -> b s (head d_v)", head=h)
+        #print(f"Triton: shape={mha.shape}, strides={mha.stride()}, contig={mha.is_contiguous()}")
+        # 2. torch.nn flash attention
+        #from torch.nn.functional import scaled_dot_product_attention as FA_torch
+        #mha = FA_torch(Q, K, V, is_causal=True)       
         
-        
-
+        # 3. torch.compile()
         #mha = scaled_dot_product_attention(Q, K, V, mask=attn_mask)
 
         
         #mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
-        
+        #print(f"FA: shape={mha.shape}, strides={mha.stride()}, contig={mha.is_contiguous()}")
 
         # SwiGLU(x) = W2(SiLU(xW1) ⊙ xW3)
         x1 = self.w1(x)
