@@ -596,6 +596,9 @@ class GatedHeadwiseAttention(nn.Module):
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None, value_embedding: torch.Tensor | None = None, lambdas: torch.Tensor | None = None) -> torch.Tensor:
         # We split the embedding dimension into an additional batch dimension (heads)
         Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
+        print(Q.is_contiguous())
+        print(Q.is_contiguous())
+        print(Q.is_contiguous())
         K = rearrange(self.Wk(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
         V = rearrange(self.Wv(x), "b s (head d_v) -> b head s d_v", d_v=self.d_v)
         #value_embedding = rearrange(value_embedding, "b s (head d_v) -> b head s d_v", d_v=self.d_v)
@@ -724,6 +727,7 @@ class GatedAttention(nn.Module):
             #return torch.tril(torch.ones((seq_len, seq_len), device=device, dtype=dtype))
             return create_sliding_window_mask(seq_len=seq_len, window_size=seq_len, device=device, dtype=dtype)
 
+
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None, value_embedding: torch.Tensor | None = None, lambdas: torch.Tensor | None = None, seq_windows: torch.Tensor | None = None) -> torch.Tensor:
         # We split the embedding dimension into an additional batch dimension (heads)
         Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
@@ -742,44 +746,12 @@ class GatedAttention(nn.Module):
             Q = self.rope(Q, token_positions).to(V.dtype)
             K = self.rope(K, token_positions).to(V.dtype)
         
-
-        """ # Attempt at implementing SkyLadder, horrible MFU, need flash-attention var len to make this work
-        if seq_windows != None:
-            mha = torch.zeros_like(V)
-            for (s0, s1) in zip(seq_windows, seq_windows[1:]):
-                q = Q[:, :, s0:s1, :] # b, h, s, d_k
-                k = K[:, :, s0:s1, :]
-                v = V[:, :, s0:s1, :]
-
-                # mha = torch.nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=self.tril)
-                mha[:, :, s0:s1, :] = scaled_dot_product_attention(q, k, v, mask=self.attention_mask)
-            # rearrenge back into original embedding dimension
-        else:"""
-        # Mask only version of SkyLadder. Worse than regular training.
-        S, H = Q.shape[-2],Q.shape[-3]
-
-        if seq_windows is not None:
-            attn_mask = self._get_block_mask(S, seq_windows, Q.device)
-        else:
-            idx = torch.arange(S, device=Q.device)
-            attn_mask = (idx.view(-1,1) >= idx.view(1,-1))  # full causal
-        
-        """
-        # Attempt at using ssmax, barely worse than regular training.
-        log_n = torch.log(torch.arange(1, S+1, device=Q.device).view(1, 1, S, 1).to(Q.dtype))
-        factor = self.s.view(1, H, 1, 1)*log_n
-        Q = Q.mul(factor)
-        """
         # 1. Triton kernel custom:
         #Flatten Q, K and V
-        b, h, s, d = Q.shape
-        Q_flat = Q.reshape(b * h, s, d)
-        K_flat = K.reshape(b * h, s, d)
-        V_flat = V.reshape(b * h, s, d)
-        print(data_ptr(Q_flat) == data_ptr(Q))
-        mha = torch.compile(TritonFlashAttentionAutogradFunction.apply(Q_flat, K_flat, V_flat, True))
+
+        mha = TritonFlashAttentionAutogradFunction.apply(Q, K, V, True)
         
-        mha = rearrange(mha, "(b head )s d_v -> b s (head d_v)", head=h)
+        #mha = rearrange(mha, "(b head )s d_v -> b s (head d_v)", head=h)
         #print(f"Triton: shape={mha.shape}, strides={mha.stride()}, contig={mha.is_contiguous()}")
         # 2. torch.nn flash attention
         #from torch.nn.functional import scaled_dot_product_attention as FA_torch
@@ -789,7 +761,7 @@ class GatedAttention(nn.Module):
         #mha = scaled_dot_product_attention(Q, K, V, mask=attn_mask)
 
         
-        #mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
+        mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
         #print(f"FA: shape={mha.shape}, strides={mha.stride()}, contig={mha.is_contiguous()}")
 
         # SwiGLU(x) = W2(SiLU(xW1) ⊙ xW3)

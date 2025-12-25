@@ -25,27 +25,21 @@ def flash_fwd_kernel(
     O_ptr,
     L_ptr,
     stride_qb,
-    stride_qh,
     stride_qq,
     stride_qd,
     stride_kb,
-    stride_kh,
     stride_kk,
     stride_kd,
     stride_vb,
-    stride_vh,
     stride_vk,
     stride_vd,
     stride_ob,
-    stride_oh,
     stride_oq,
     stride_od,
     stride_lb,
-    stride_lh,
     stride_lq,
     N_QUERIES,
     N_KEYS,
-    H,
     scale,
     is_causal: tl.constexpr,
     D: tl.constexpr,
@@ -54,14 +48,12 @@ def flash_fwd_kernel(
 ):
     # Program indices
     query_tile_index = tl.program_id(0)
-    bh = tl.program_id(1)
-    batch_index = bh // H
-    head_index = bh % H
+    batch_index = tl.program_id(1)
 
     # Offset each pointer with the corresponding batch index
     # multiplied with the batch stride for each tensor
     Q_block_ptr = tl.make_block_ptr(
-        Q_ptr + batch_index * stride_qb + head_index * stride_qh,
+        Q_ptr + batch_index * stride_qb,
         shape=(N_QUERIES, D),
         strides=(stride_qq, stride_qd),
         offsets=(query_tile_index * Q_TILE_SIZE, 0),
@@ -70,7 +62,7 @@ def flash_fwd_kernel(
     )
     # Set up K_block_ptr, V_block_ptr, O_block_ptr, L_block_ptr similarly
     K_block_ptr = tl.make_block_ptr(
-        K_ptr + batch_index * stride_kb + head_index * stride_kh,
+        K_ptr + batch_index * stride_kb,
         shape=(N_KEYS, D),
         strides=(stride_kk, stride_kd),
         offsets=(0, 0),
@@ -79,7 +71,7 @@ def flash_fwd_kernel(
     )
 
     V_block_ptr = tl.make_block_ptr(
-        V_ptr + batch_index * stride_vb + head_index * stride_vh,
+        V_ptr + batch_index * stride_vb,
         shape=(N_KEYS, D),
         strides=(stride_vk, stride_vd),
         offsets=(0, 0),
@@ -88,7 +80,7 @@ def flash_fwd_kernel(
     )
 
     O_block_ptr = tl.make_block_ptr(
-        O_ptr + batch_index * stride_ob + head_index * stride_oh,
+        O_ptr + batch_index * stride_ob,
         shape=(N_QUERIES, D),
         strides=(stride_oq, stride_od),
         offsets=(query_tile_index * Q_TILE_SIZE, 0),
@@ -97,7 +89,7 @@ def flash_fwd_kernel(
     )
 
     L_block_ptr = tl.make_block_ptr(
-        L_ptr + batch_index * stride_lb + head_index * stride_lh,
+        L_ptr + batch_index * stride_lb,
         shape=(N_QUERIES,),
         strides=(stride_lq,),
         offsets=(query_tile_index * Q_TILE_SIZE,),
@@ -180,6 +172,28 @@ def flash_fwd_kernel(
     tl.store(L_block_ptr, l_j.to(L_block_ptr.type.element_ty))
 
 
+@torch.compile()
+def flash_bwd_pytorch(Q, K, V, L, O, dO, is_causal):
+    b, Nq, d = Q.shape
+    scale = 1 / math.sqrt(d)
+
+    D = torch.sum(dO * O, dim=-1)
+
+    S = einsum(Q, K, "b Bq d, b Bk d -> b Bq Bk") * scale
+    if is_causal:
+        mask = torch.triu(torch.ones(Nq, Nq, device=Q.device, dtype=torch.bool), diagonal=1)
+        S = S.masked_fill(mask, float("-inf"))
+
+    P = torch.exp(S - L.unsqueeze(-1))  # Don't need running softmax as we have stored L
+
+    dV = P.transpose(-2, -1) @ dO
+    dP = dO @ V.transpose(-2, -1)
+    dS = P * (dP - D.unsqueeze(-1)) * scale
+    dQ = dS @ K  # Must be atomic add in triton kernel for correctness.
+    dK = dS.transpose(-2, -1) @ Q
+
+    return dQ, dK, dV
+
 """@triton.autotune(
     configs = [
         triton.Config(
@@ -204,42 +218,32 @@ def flash_bwd_kv(
     dV_ptr,
     dO_ptr,
     stride_qb,
-    stride_qh,
     stride_qq,
     stride_qd,
     stride_kb,
-    stride_kh,
     stride_kk,
     stride_kd,
     stride_dkb,
-    stride_dkh,
     stride_dkk,
     stride_dkd,
     stride_vb,
-    stride_vh,
     stride_vk,
     stride_vd,
     stride_dvb,
-    stride_dvh,
     stride_dvk,
     stride_dvd,
     stride_ob,
-    stride_oh,
     stride_oq,
     stride_od,
     stride_dob,
-    stride_doh,
     stride_doq,
     stride_dod,
     stride_lb,
-    stride_lh,
     stride_lq,
     stride_db,
-    stride_dh,
     stride_dq,
     N_QUERIES,
     N_KEYS,
-    H,
     scale,
     is_causal: tl.constexpr,
     d: tl.constexpr,
@@ -248,14 +252,12 @@ def flash_bwd_kv(
 ):
     # Program indices
     key_tile_index = tl.program_id(0)
-    bh = tl.program_id(1)
-    batch_index = bh // H
-    head_index = bh % H
+    batch_index = tl.program_id(1)
 
     # Offset each pointer with the corresponding batch index
     # multiplied with the batch stride for each tensor
     Q_block_ptr = tl.make_block_ptr(
-        Q_ptr + batch_index * stride_qb + head_index * stride_qh,
+        Q_ptr + batch_index * stride_qb,
         shape=(N_QUERIES, d),
         strides=(stride_qq, stride_qd),
         offsets=(0, 0),
@@ -265,7 +267,7 @@ def flash_bwd_kv(
 
     # Set up K_block_ptr, V_block_ptr, O_block_ptr, L_block_ptr similarly
     K_block_ptr = tl.make_block_ptr(
-        K_ptr + batch_index * stride_kb + head_index * stride_kh,
+        K_ptr + batch_index * stride_kb,
         shape=(N_KEYS, d),
         strides=(stride_kk, stride_kd),
         offsets=(key_tile_index * K_TILE_SIZE, 0),
@@ -274,7 +276,7 @@ def flash_bwd_kv(
     )
 
     dK_block_ptr = tl.make_block_ptr(
-        dK_ptr + batch_index * stride_dkb + head_index * stride_dkh,
+        dK_ptr + batch_index * stride_dkb,
         shape=(N_KEYS, d),
         strides=(stride_dkk, stride_dkd),
         offsets=(key_tile_index * K_TILE_SIZE, 0),
@@ -283,7 +285,7 @@ def flash_bwd_kv(
     )
 
     V_block_ptr = tl.make_block_ptr(
-        V_ptr + batch_index * stride_vb + head_index * stride_vh,
+        V_ptr + batch_index * stride_vb,
         shape=(N_KEYS, d),
         strides=(stride_vk, stride_vd),
         offsets=(key_tile_index * K_TILE_SIZE, 0),
@@ -292,7 +294,7 @@ def flash_bwd_kv(
     )
 
     dV_block_ptr = tl.make_block_ptr(
-        dV_ptr + batch_index * stride_dvb + head_index * stride_dvh,
+        dV_ptr + batch_index * stride_dvb,
         shape=(N_KEYS, d),
         strides=(stride_dvk, stride_dvd),
         offsets=(key_tile_index * K_TILE_SIZE, 0),
@@ -301,7 +303,7 @@ def flash_bwd_kv(
     )
 
     O_block_ptr = tl.make_block_ptr(
-        O_ptr + batch_index * stride_ob + head_index * stride_oh,
+        O_ptr + batch_index * stride_ob,
         shape=(N_QUERIES, d),
         strides=(stride_oq, stride_od),
         offsets=(0, 0),
@@ -310,7 +312,7 @@ def flash_bwd_kv(
     )
 
     dO_block_ptr = tl.make_block_ptr(
-        dO_ptr + batch_index * stride_dob + head_index * stride_doh,
+        dO_ptr + batch_index * stride_dob,
         shape=(N_QUERIES, d),
         strides=(stride_doq, stride_dod),
         offsets=(0, 0),
@@ -319,7 +321,7 @@ def flash_bwd_kv(
     )
 
     L_block_ptr = tl.make_block_ptr(
-        L_ptr + batch_index * stride_lb + head_index * stride_lh,
+        L_ptr + batch_index * stride_lb,
         shape=(N_QUERIES,),
         strides=(stride_lq,),
         offsets=(0,),
@@ -328,7 +330,7 @@ def flash_bwd_kv(
     )
 
     D_block_ptr = tl.make_block_ptr(
-        D_ptr + batch_index * stride_db + head_index * stride_dh,
+        D_ptr + batch_index * stride_db,
         shape=(N_QUERIES,),
         strides=(stride_dq,),
         offsets=(0,),
@@ -448,38 +450,29 @@ def flash_bwd_dq(
     dQ_ptr,
     dO_ptr,
     stride_qb,
-    stride_qh,
     stride_qq,
     stride_qd,
     stride_dqb,
-    stride_dqh,
     stride_dqq,
     stride_dqd,
     stride_kb,
-    stride_kh,
     stride_kk,
     stride_kd,
     stride_vb,
-    stride_vh,
     stride_vk,
     stride_vd,
     stride_ob,
-    stride_oh,
     stride_oq,
     stride_od,
     stride_dob,
-    stride_doh,
     stride_doq,
     stride_dod,
     stride_lb,
-    stride_lh,
     stride_lq,
     stride_db,
-    stride_dh,
     stride_dq,
     N_QUERIES,
     N_KEYS,
-    H,
     scale,
     is_causal: tl.constexpr,
     D: tl.constexpr,
@@ -488,14 +481,12 @@ def flash_bwd_dq(
 ):
 
     query_tile_index = tl.program_id(0)
-    bh = tl.program_id(1)
-    batch_index = bh // H
-    head_index = bh % H
+    batch_index = tl.program_id(1)
 
     # Offset each pointer with the corresponding batch index
     # multiplied with the batch stride for each tensor
     Q_block_ptr = tl.make_block_ptr(
-        Q_ptr + batch_index * stride_qb + head_index * stride_qh,
+        Q_ptr + batch_index * stride_qb,
         shape=(N_QUERIES, D),
         strides=(stride_qq, stride_qd),
         offsets=(query_tile_index * Q_TILE_SIZE, 0),
@@ -504,7 +495,7 @@ def flash_bwd_dq(
     )
 
     dQ_block_ptr = tl.make_block_ptr(
-        dQ_ptr + batch_index * stride_dqb + head_index * stride_dqh,
+        dQ_ptr + batch_index * stride_dqb,
         shape=(N_QUERIES, D),
         strides=(stride_dqq, stride_dqd),
         offsets=(query_tile_index * Q_TILE_SIZE, 0),
@@ -514,7 +505,7 @@ def flash_bwd_dq(
 
     # Set up K_block_ptr, V_block_ptr, O_block_ptr, L_block_ptr similarly
     K_block_ptr = tl.make_block_ptr(
-        K_ptr + batch_index * stride_kb + head_index * stride_kh,
+        K_ptr + batch_index * stride_kb,
         shape=(N_KEYS, D),
         strides=(stride_kk, stride_kd),
         offsets=(0, 0),
@@ -523,7 +514,7 @@ def flash_bwd_dq(
     )
 
     V_block_ptr = tl.make_block_ptr(
-        V_ptr + batch_index * stride_vb + head_index * stride_vh,
+        V_ptr + batch_index * stride_vb,
         shape=(N_KEYS, D),
         strides=(stride_vk, stride_vd),
         offsets=(0, 0),
@@ -533,7 +524,7 @@ def flash_bwd_dq(
 
 
     O_block_ptr = tl.make_block_ptr(
-        O_ptr + batch_index * stride_ob + head_index * stride_oh,
+        O_ptr + batch_index * stride_ob,
         shape=(N_QUERIES, D),
         strides=(stride_oq, stride_od),
         offsets=(query_tile_index * Q_TILE_SIZE, 0),
@@ -542,7 +533,7 @@ def flash_bwd_dq(
     )
 
     dO_block_ptr = tl.make_block_ptr(
-        dO_ptr + batch_index * stride_dob + head_index * stride_doh,
+        dO_ptr + batch_index * stride_dob,
         shape=(N_QUERIES, D),
         strides=(stride_doq, stride_dod),
         offsets=(query_tile_index * Q_TILE_SIZE, 0),
@@ -551,7 +542,7 @@ def flash_bwd_dq(
     )
 
     L_block_ptr = tl.make_block_ptr(
-        L_ptr + batch_index * stride_lb + head_index * stride_lh,
+        L_ptr + batch_index * stride_lb,
         shape=(N_QUERIES,),
         strides=(stride_lq,),
         offsets=(query_tile_index * Q_TILE_SIZE,),
@@ -560,7 +551,7 @@ def flash_bwd_dq(
     )
 
     D_block_ptr = tl.make_block_ptr(
-        D_ptr + batch_index * stride_db + head_index * stride_dh,
+        D_ptr + batch_index * stride_db,
         shape=(N_QUERIES,),
         strides=(stride_dq,),
         offsets=(query_tile_index * Q_TILE_SIZE,),
@@ -633,24 +624,24 @@ def flash_bwd_dq(
 class TritonFlashAttentionAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, Q_ptr, K_ptr, V_ptr, is_causal: bool = False):
-        b, h, N_QUERIES, D = Q_ptr.shape
-        b, h, N_KEYS, D = K_ptr.shape
+        b, N_QUERIES, D = Q_ptr.shape
+        b, N_KEYS, D = K_ptr.shape
         scale = 1 / math.sqrt(D)
         ctx.is_causal = is_causal
         O_ptr = torch.empty((Q_ptr.shape), device=Q_ptr.device, dtype=Q_ptr.dtype)
-        L_ptr = torch.empty((b, h, N_QUERIES), device=Q_ptr.device, dtype=Q_ptr.dtype)
+        L_ptr = torch.empty((b, N_QUERIES), device=Q_ptr.device, dtype=Q_ptr.dtype)
 
-        stride_qb, stride_qh, stride_qq, stride_qd = (Q_ptr.stride(0), Q_ptr.stride(1), Q_ptr.stride(2), Q_ptr.stride(3))
-        stride_kb, stride_kh, stride_kk, stride_kd = (K_ptr.stride(0), K_ptr.stride(1), K_ptr.stride(2), K_ptr.stride(3))
-        stride_vb, stride_vh, stride_vk, stride_vd = (V_ptr.stride(0), V_ptr.stride(1), V_ptr.stride(2), V_ptr.stride(3))
-        stride_ob, stride_oh, stride_oq, stride_od = (O_ptr.stride(0), O_ptr.stride(1), O_ptr.stride(2), O_ptr.stride(3))
-        stride_lb, stride_lh, stride_lq = (L_ptr.stride(0), L_ptr.stride(1), L_ptr.stride(2))
+        stride_qb, stride_qq, stride_qd = (Q_ptr.stride(0), Q_ptr.stride(1), Q_ptr.stride(2))
+        stride_kb, stride_kk, stride_kd = (K_ptr.stride(0), K_ptr.stride(1), K_ptr.stride(2))
+        stride_vb, stride_vk, stride_vd = (V_ptr.stride(0), V_ptr.stride(1), V_ptr.stride(2))
+        stride_ob, stride_oq, stride_od = (O_ptr.stride(0), O_ptr.stride(1), O_ptr.stride(2))
+        stride_lb, stride_lq = (L_ptr.stride(0), L_ptr.stride(1))
 
         Q_TILE_SIZE = 64
         K_TILE_SIZE = 64
         Tq = N_QUERIES // Q_TILE_SIZE
 
-        grid = (Tq, b*h)  # launch independent batches and Q-tiles across SM's
+        grid = (Tq, b)  # launch independent batches and Q-tiles across SM's
         #grid = lambda META: (N_QUERIES // META['Q_TILE_SIZE'], b)
         flash_fwd_kernel[grid](
             Q_ptr,
@@ -659,27 +650,21 @@ class TritonFlashAttentionAutogradFunction(torch.autograd.Function):
             O_ptr,
             L_ptr,
             stride_qb,
-            stride_qh,
             stride_qq,
             stride_qd,
             stride_kb,
-            stride_kh,
             stride_kk,
             stride_kd,
             stride_vb,
-            stride_vh,
             stride_vk,
             stride_vd,
             stride_ob,
-            stride_oh,
             stride_oq,
             stride_od,
             stride_lb,
-            stride_lh,
             stride_lq,
             N_QUERIES,
             N_KEYS,
-            h,
             scale,
             is_causal,
             D,
@@ -695,8 +680,8 @@ class TritonFlashAttentionAutogradFunction(torch.autograd.Function):
     @staticmethod
     def backward(ctx, dO_ptr):
         Q_ptr, K_ptr, V_ptr, L_ptr, O_ptr = ctx.saved_tensors
-        b, h, N_QUERIES, d = Q_ptr.shape
-        b, h, N_KEYS, d = K_ptr.shape
+        b, N_QUERIES, d = Q_ptr.shape
+        b, N_KEYS, d = K_ptr.shape
         is_causal = ctx.is_causal
         scale = 1 / math.sqrt(d)
         # dQ, dK, dV = flash_bwd_pytorch(Q, K, V, L, O, dO, is_causal)
@@ -709,19 +694,16 @@ class TritonFlashAttentionAutogradFunction(torch.autograd.Function):
         #D_ptr = torch.empty((L_ptr.shape), device=L_ptr.device, dtype=L_ptr.dtype)
         D_ptr = torch.sum(dO_ptr * O_ptr, dim=-1)
 
-
-        stride_qb, stride_qh, stride_qq, stride_qd = (Q_ptr.stride(0), Q_ptr.stride(1), Q_ptr.stride(2), Q_ptr.stride(3))
-        stride_kb, stride_kh, stride_kk, stride_kd = (K_ptr.stride(0), K_ptr.stride(1), K_ptr.stride(2), K_ptr.stride(3))
-        stride_vb, stride_vh, stride_vk, stride_vd = (V_ptr.stride(0), V_ptr.stride(1), V_ptr.stride(2), V_ptr.stride(3))
-        stride_ob, stride_oh, stride_oq, stride_od = (O_ptr.stride(0), O_ptr.stride(1), O_ptr.stride(2), O_ptr.stride(3))
-
-        stride_dqb, stride_dqh, stride_dqq, stride_dqd = (dQ_ptr.stride(0), dQ_ptr.stride(1), dQ_ptr.stride(2), dQ_ptr.stride(3))
-        stride_dkb, stride_dkh, stride_dkk, stride_dkd = (dK_ptr.stride(0), dK_ptr.stride(1), dK_ptr.stride(2), dK_ptr.stride(3))
-        stride_dvb, stride_dvh, stride_dvk, stride_dvd = (dV_ptr.stride(0), dV_ptr.stride(1), dV_ptr.stride(2), dV_ptr.stride(3))
-        stride_dob, stride_doh, stride_doq, stride_dod = (dO_ptr.stride(0), dO_ptr.stride(1), dO_ptr.stride(2), dO_ptr.stride(3))
-
-        stride_lb, stride_lh, stride_lq = (L_ptr.stride(0), L_ptr.stride(1), L_ptr.stride(2))
-        stride_db, stride_dh, stride_dq = (D_ptr.stride(0), D_ptr.stride(1), D_ptr.stride(2))
+        stride_qb, stride_qq, stride_qd = (Q_ptr.stride(0), Q_ptr.stride(1), Q_ptr.stride(2))
+        stride_dqb, stride_dqq, stride_dqd = (dQ_ptr.stride(0), dQ_ptr.stride(1), dQ_ptr.stride(2))
+        stride_kb, stride_kk, stride_kd = (K_ptr.stride(0), K_ptr.stride(1), K_ptr.stride(2))
+        stride_dkb, stride_dkk, stride_dkd = (dK_ptr.stride(0), dK_ptr.stride(1), dK_ptr.stride(2))
+        stride_vb, stride_vk, stride_vd = (V_ptr.stride(0), V_ptr.stride(1), V_ptr.stride(2))
+        stride_dvb, stride_dvk, stride_dvd = (dV_ptr.stride(0), dV_ptr.stride(1), dV_ptr.stride(2))
+        stride_ob, stride_oq, stride_od = (O_ptr.stride(0), O_ptr.stride(1), O_ptr.stride(2))
+        stride_dob, stride_doq, stride_dod = (dO_ptr.stride(0), dO_ptr.stride(1), dO_ptr.stride(2))
+        stride_lb, stride_lq = (L_ptr.stride(0), L_ptr.stride(1))
+        stride_db, stride_dq = (D_ptr.stride(0), D_ptr.stride(1))
 
 
         # dQ-kernel --------
@@ -729,7 +711,7 @@ class TritonFlashAttentionAutogradFunction(torch.autograd.Function):
         K_TILE_SIZE_dq = 64
         Tq = N_QUERIES // Q_TILE_SIZE_dq
         #grid = lambda META: (N_QUERIES // META['Q_TILE_SIZE'], b)  
-        grid = (Tq, b*h) # launch independent batches and Q-tiles across SM's
+        grid = (Tq, b) # launch independent batches and Q-tiles across SM's
         flash_bwd_dq[grid](
             Q_ptr,
             K_ptr,
@@ -740,38 +722,29 @@ class TritonFlashAttentionAutogradFunction(torch.autograd.Function):
             dQ_ptr,
             dO_ptr,
             stride_qb,
-            stride_qh,
             stride_qq,
             stride_qd,
             stride_dqb,
-            stride_dqh,
             stride_dqq,
             stride_dqd,
             stride_kb,
-            stride_kh,
             stride_kk,
             stride_kd,
             stride_vb,
-            stride_vh,
             stride_vk,
             stride_vd,
             stride_ob,
-            stride_oh,
             stride_oq,
             stride_od,
             stride_dob,
-            stride_doh,
             stride_doq,
             stride_dod,
             stride_lb,
-            stride_lh,
             stride_lq,
             stride_db,
-            stride_dh,
             stride_dq,
             N_QUERIES,
             N_KEYS,
-            h,
             scale,
             is_causal,
             d,
@@ -788,7 +761,7 @@ class TritonFlashAttentionAutogradFunction(torch.autograd.Function):
         Tk = N_KEYS // K_TILE_SIZE
 
         #grid = lambda META: (N_KEYS // META['K_TILE_SIZE'], b)  
-        grid = (Tk, b*h) # launch independent batches and Q-tiles across SM's
+        grid = (Tk, b) # launch independent batches and Q-tiles across SM's
         flash_bwd_kv[grid](
             Q_ptr,
             K_ptr,
@@ -800,42 +773,32 @@ class TritonFlashAttentionAutogradFunction(torch.autograd.Function):
             dV_ptr,
             dO_ptr,
             stride_qb,
-            stride_qh,
             stride_qq,
             stride_qd,
             stride_kb,
-            stride_kh,
             stride_kk,
             stride_kd,
             stride_dkb,
-            stride_dkh,
             stride_dkk,
             stride_dkd,
             stride_vb,
-            stride_vh,
             stride_vk,
             stride_vd,
             stride_dvb,
-            stride_dvh,
             stride_dvk,
             stride_dvd,
             stride_ob,
-            stride_oh,
             stride_oq,
             stride_od,
             stride_dob,
-            stride_doh,
             stride_doq,
             stride_dod,
             stride_lb,
-            stride_lh,
             stride_lq,
             stride_db,
-            stride_dh,
             stride_dq,
             N_QUERIES,
             N_KEYS,
-            h,
             scale,
             is_causal,
             d,
