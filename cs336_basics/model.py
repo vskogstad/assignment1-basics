@@ -632,6 +632,7 @@ def create_sliding_window_mask(seq_len: int, window_size: int, device, dtype):
     mask = torch.tril(mask)
     return mask
 
+@torch._dynamo.disable
 class GatedAttention(nn.Module):
     def __init__(
         self,
@@ -730,9 +731,29 @@ class GatedAttention(nn.Module):
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None, value_embedding: torch.Tensor | None = None, lambdas: torch.Tensor | None = None, seq_windows: torch.Tensor | None = None) -> torch.Tensor:
         # We split the embedding dimension into an additional batch dimension (heads)
-        Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
+        """Q = rearrange(self.Wq(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
         K = rearrange(self.Wk(x), "b s (head d_k) -> b head s d_k", d_k=self.d_k)
-        V = rearrange(self.Wv(x), "b s (head d_v) -> b head s d_v", d_v=self.d_v)
+        V = rearrange(self.Wv(x), "b s (head d_v) -> b head s d_v", d_v=self.d_v)"""
+            # linear outputs (do NOT recompute later)
+        q_lin = self.Wq(x)
+        k_lin = self.Wk(x)
+        v_lin = self.Wv(x)
+
+        B, S, HDq = q_lin.shape
+        H = self.num_heads  # or whatever you call it
+        Dq = self.d_k
+        Dv = self.d_v
+
+        # Build Q/K/V via explicit view + transpose (recommended)
+        q4 = q_lin.view(B, S, H, Dq)
+        Q = q4.transpose(1, 2)  # (B, H, S, Dq)
+
+        k4 = k_lin.view(B, S, H, Dq)
+        K = k4.transpose(1, 2)
+
+        v4 = v_lin.view(B, S, H, Dv)
+        V = v4.transpose(1, 2)
+
 
         #value_embedding = rearrange(value_embedding, "b s (head d_v) -> b head s d_v", d_v=self.d_v)
         if value_embedding is not None:  # Only mix if provided
@@ -747,21 +768,32 @@ class GatedAttention(nn.Module):
             K = self.rope(K, token_positions).to(V.dtype)
         
         # 1. Triton kernel custom:
-        #Flatten Q, K and V
+        """def _ptr(t): 
+            return hex(t.untyped_storage().data_ptr())
 
-        mha = TritonFlashAttentionAutogradFunction.apply(Q, K, V, True)
+        def _dbg(name, t):
+            print(f"{name}: shape={tuple(t.shape)} stride={t.stride()} contig={t.is_contiguous()} ptr={_ptr(t)}")
+
+        # right before apply(...)
+        _dbg("Q_in", Q)
+        _dbg("K_in", K)
+        _dbg("V_in", V)"""
+
+        #out = TritonFlashAttentionAutogradFunction.apply(Q, K, V, True)
+
+        #_dbg("O_out", out)
         
         #mha = rearrange(mha, "(b head )s d_v -> b s (head d_v)", head=h)
         #print(f"Triton: shape={mha.shape}, strides={mha.stride()}, contig={mha.is_contiguous()}")
         # 2. torch.nn flash attention
-        #from torch.nn.functional import scaled_dot_product_attention as FA_torch
-        #mha = FA_torch(Q, K, V, is_causal=True)       
+        from torch.nn.functional import scaled_dot_product_attention as FA_torch
+        out = FA_torch(Q, K, V, is_causal=True)       
         
         # 3. torch.compile()
         #mha = scaled_dot_product_attention(Q, K, V, mask=attn_mask)
 
         
-        mha = rearrange(mha, "b head s d_v -> b s (head d_v)")
+        mha = rearrange(out, "b head s d_v -> b s (head d_v)")
         #print(f"FA: shape={mha.shape}, strides={mha.stride()}, contig={mha.is_contiguous()}")
 
         # SwiGLU(x) = W2(SiLU(xW1) ⊙ xW3)

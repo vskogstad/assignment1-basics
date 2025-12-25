@@ -637,7 +637,7 @@ class TritonFlashAttentionAutogradFunction(torch.autograd.Function):
         b, h, N_KEYS, D = K_ptr.shape
         scale = 1 / math.sqrt(D)
         ctx.is_causal = is_causal
-        O_ptr = torch.empty((Q_ptr.shape), device=Q_ptr.device, dtype=Q_ptr.dtype)
+        O_ptr = torch.empty_like(Q_ptr, memory_format=torch.preserve_format)
         L_ptr = torch.empty((b, h, N_QUERIES), device=Q_ptr.device, dtype=Q_ptr.dtype)
 
         stride_qb, stride_qh, stride_qq, stride_qd = (Q_ptr.stride(0), Q_ptr.stride(1), Q_ptr.stride(2), Q_ptr.stride(3))
@@ -701,9 +701,9 @@ class TritonFlashAttentionAutogradFunction(torch.autograd.Function):
         scale = 1 / math.sqrt(d)
         # dQ, dK, dV = flash_bwd_pytorch(Q, K, V, L, O, dO, is_causal)
 
-        dQ_ptr = torch.zeros((Q_ptr.shape), device=Q_ptr.device, dtype=Q_ptr.dtype)
-        dK_ptr = torch.empty((K_ptr.shape), device=K_ptr.device, dtype=K_ptr.dtype)
-        dV_ptr = torch.empty((V_ptr.shape), device=V_ptr.device, dtype=V_ptr.dtype)
+        dQ_ptr = torch.empty_like(Q_ptr, memory_format=torch.preserve_format)
+        dK_ptr = torch.empty_like(K_ptr, memory_format=torch.preserve_format)
+        dV_ptr = torch.empty_like(V_ptr, memory_format=torch.preserve_format)
 
         # Precomputing D
         #D_ptr = torch.empty((L_ptr.shape), device=L_ptr.device, dtype=L_ptr.dtype)
