@@ -8,6 +8,80 @@ from einops import einsum, rearrange, reduce
 """@triton.autotune(
     configs = [
         triton.Config(
+            {"D_BLOCK_SIZE": D_BLOCK_SIZE},
+            num_warps=num_warps,
+        )
+        for D_BLOCK_SIZE in [32, 64, 128]
+        for num_warps in [2, 4]
+    ],
+    key = ["N_QUERIES", "d"]
+)"""
+@triton.jit
+def flash_precompute_d(
+    O_ptr,
+    dO_ptr,
+    D_ptr,
+    stride_ob,
+    stride_oh,
+    stride_oq,
+    stride_od,
+    stride_dob,
+    stride_doh,
+    stride_doq,
+    stride_dod,
+    stride_db,
+    stride_dh,
+    stride_dq,
+    N_QUERIES: tl.constexpr,
+    D_BLOCK_SIZE: tl.constexpr,
+    d: tl.constexpr,
+    H: tl.constexpr,
+
+):
+
+    query_tile_index = tl.program_id(0)
+    bh = tl.program_id(1)
+    batch_index = bh // H
+    head_index = bh % H
+
+
+    O_block_ptr = tl.make_block_ptr(
+        O_ptr + batch_index * stride_ob + head_index * stride_oh,
+        shape=(N_QUERIES, d),
+        strides=(stride_oq, stride_od),
+        offsets=(0, 0),
+        block_shape=(D_BLOCK_SIZE, d),
+        order=(1, 0),
+    )
+
+    dO_block_ptr = tl.make_block_ptr(
+        dO_ptr + batch_index * stride_dob + head_index * stride_doh,
+        shape=(N_QUERIES, d),
+        strides=(stride_doq, stride_dod),
+        offsets=(0, 0),
+        block_shape=(D_BLOCK_SIZE, d),
+        order=(1, 0),
+    )
+
+
+    D_block_ptr = tl.make_block_ptr(
+        D_ptr + batch_index * stride_db + head_index * stride_dh,
+        shape=(N_QUERIES,),
+        strides=(stride_dq,),
+        offsets=(0,),
+        block_shape=(D_BLOCK_SIZE,),
+        order=(0,),
+    )
+
+
+    o = tl.load(O_block_ptr, boundary_check=(0, 1), padding_option="zero")
+    do = tl.load(dO_block_ptr, boundary_check=(0, 1), padding_option="zero")
+    delta = tl.sum(o * do, axis=1).to(D_block_ptr.type.element_ty)
+    tl.store(D_block_ptr, delta)
+
+"""@triton.autotune(
+    configs = [
+        triton.Config(
             {"Q_TILE_SIZE": Q_TILE_SIZE, "K_TILE_SIZE":K_TILE_SIZE},
             num_warps=num_warps,
         )
@@ -688,17 +762,25 @@ class TritonFlashAttentionAutogradFunction(torch.autograd.Function):
             
         )
         # In forward, before returning:
-        #print(f"O_ptr dtype: {O_ptr.dtype}, Q_ptr dtype: {Q_ptr.dtype}")
+        #Saving strides and shapes to avoid calling these during backward. Causes graph breaks.
+        ctx.q_stride = Q_ptr.stride()
+        ctx.k_stride = K_ptr.stride()
+        ctx.v_stride = V_ptr.stride()
+        ctx.o_stride = O_ptr.stride()
+        ctx.l_stride = L_ptr.stride()
+        ctx.q_shape = Q_ptr.shape  # (B,H,S,D)
+        ctx.k_shape = K_ptr.shape  # (B,H,S,D)
+        ctx.scale = 1 / math.sqrt(D)
         ctx.save_for_backward(Q_ptr, K_ptr, V_ptr, L_ptr, O_ptr)
         return O_ptr
 
     @staticmethod
     def backward(ctx, dO_ptr):
         Q_ptr, K_ptr, V_ptr, L_ptr, O_ptr = ctx.saved_tensors
-        b, h, N_QUERIES, d = Q_ptr.shape
-        b, h, N_KEYS, d = K_ptr.shape
+        b, h, N_QUERIES, d = ctx.q_shape
+        b, h, N_KEYS, d = ctx.k_shape
         is_causal = ctx.is_causal
-        scale = 1 / math.sqrt(d)
+        scale = ctx.scale
         # dQ, dK, dV = flash_bwd_pytorch(Q, K, V, L, O, dO, is_causal)
 
         dQ_ptr = torch.empty_like(Q_ptr, memory_format=torch.preserve_format)
@@ -707,22 +789,51 @@ class TritonFlashAttentionAutogradFunction(torch.autograd.Function):
 
         # Precomputing D
         #D_ptr = torch.empty((L_ptr.shape), device=L_ptr.device, dtype=L_ptr.dtype)
-        D_ptr = torch.sum(dO_ptr * O_ptr, dim=-1)
+        D_ptr = torch.empty_like(L_ptr, memory_format=torch.preserve_format)
+        #D_ptr = torch.sum(dO_ptr * O_ptr, dim=-1)
 
 
-        stride_qb, stride_qh, stride_qq, stride_qd = (Q_ptr.stride(0), Q_ptr.stride(1), Q_ptr.stride(2), Q_ptr.stride(3))
-        stride_kb, stride_kh, stride_kk, stride_kd = (K_ptr.stride(0), K_ptr.stride(1), K_ptr.stride(2), K_ptr.stride(3))
-        stride_vb, stride_vh, stride_vk, stride_vd = (V_ptr.stride(0), V_ptr.stride(1), V_ptr.stride(2), V_ptr.stride(3))
-        stride_ob, stride_oh, stride_oq, stride_od = (O_ptr.stride(0), O_ptr.stride(1), O_ptr.stride(2), O_ptr.stride(3))
+        stride_qb, stride_qh, stride_qq, stride_qd = ctx.q_stride #(Q_ptr.stride(0), Q_ptr.stride(1), Q_ptr.stride(2), Q_ptr.stride(3))
+        stride_kb, stride_kh, stride_kk, stride_kd = ctx.k_stride #(K_ptr.stride(0), K_ptr.stride(1), K_ptr.stride(2), K_ptr.stride(3))
+        stride_vb, stride_vh, stride_vk, stride_vd = ctx.v_stride #(V_ptr.stride(0), V_ptr.stride(1), V_ptr.stride(2), V_ptr.stride(3))
+        stride_ob, stride_oh, stride_oq, stride_od = ctx.o_stride #(O_ptr.stride(0), O_ptr.stride(1), O_ptr.stride(2), O_ptr.stride(3))
 
-        stride_dqb, stride_dqh, stride_dqq, stride_dqd = (dQ_ptr.stride(0), dQ_ptr.stride(1), dQ_ptr.stride(2), dQ_ptr.stride(3))
-        stride_dkb, stride_dkh, stride_dkk, stride_dkd = (dK_ptr.stride(0), dK_ptr.stride(1), dK_ptr.stride(2), dK_ptr.stride(3))
-        stride_dvb, stride_dvh, stride_dvk, stride_dvd = (dV_ptr.stride(0), dV_ptr.stride(1), dV_ptr.stride(2), dV_ptr.stride(3))
-        stride_dob, stride_doh, stride_doq, stride_dod = (dO_ptr.stride(0), dO_ptr.stride(1), dO_ptr.stride(2), dO_ptr.stride(3))
+        stride_dqb, stride_dqh, stride_dqq, stride_dqd = ctx.q_stride #(dQ_ptr.stride(0), dQ_ptr.stride(1), dQ_ptr.stride(2), dQ_ptr.stride(3))
+        stride_dkb, stride_dkh, stride_dkk, stride_dkd = ctx.k_stride #(dK_ptr.stride(0), dK_ptr.stride(1), dK_ptr.stride(2), dK_ptr.stride(3))
+        stride_dvb, stride_dvh, stride_dvk, stride_dvd = ctx.v_stride #(dV_ptr.stride(0), dV_ptr.stride(1), dV_ptr.stride(2), dV_ptr.stride(3))
+        stride_dob, stride_doh, stride_doq, stride_dod = ctx.o_stride #(dO_ptr.stride(0), dO_ptr.stride(1), dO_ptr.stride(2), dO_ptr.stride(3))
 
-        stride_lb, stride_lh, stride_lq = (L_ptr.stride(0), L_ptr.stride(1), L_ptr.stride(2))
-        stride_db, stride_dh, stride_dq = (D_ptr.stride(0), D_ptr.stride(1), D_ptr.stride(2))
+        stride_lb, stride_lh, stride_lq = ctx.l_stride #(L_ptr.stride(0), L_ptr.stride(1), L_ptr.stride(2))
+        stride_db, stride_dh, stride_dq = ctx.l_stride #(D_ptr.stride(0), D_ptr.stride(1), D_ptr.stride(2))
 
+
+        # D-kernel
+        D_BLOCK_SIZE = 512
+        Td = N_QUERIES // D_BLOCK_SIZE
+        grid = (Td, b*h)
+        flash_precompute_d[grid](
+            O_ptr,
+            dO_ptr,
+            D_ptr,
+            stride_ob,
+            stride_oh,
+            stride_oq,
+            stride_od,
+            stride_dob,
+            stride_doh,
+            stride_doq,
+            stride_dod,
+            stride_db,
+            stride_dh,
+            stride_dq,
+            N_QUERIES,
+            D_BLOCK_SIZE,
+            d,
+            h,
+            num_stages=1,
+            num_warps=4
+
+        )
 
         # dQ-kernel --------
         Q_TILE_SIZE_dq = 64
@@ -903,7 +1014,7 @@ def test_timing_flash_forward_backward():
             "head_dim": 64,
             "dtype": torch.bfloat16,
             "is_causal": True,
-            "direction": "both",
+            "direction": "forward",
         },  # values for function arguments not in `x_names` and `y_name`
     )
 )
@@ -927,12 +1038,8 @@ def benchmark_attention(batch_dim, num_heads, seq_dim, head_dim, dtype, attentio
     getattr(torch, DEVICE.type).set_stream(stream)
 
     if attention_function == "Triton_kernel":
-        #Flatten Q, K and V
         b, h, s, d = Q.shape
-        Q_flat = Q.reshape(b * h, s, d)
-        K_flat = K.reshape(b * h, s, d)
-        V_flat = V.reshape(b * h, s, d)
-        ms = test_wrapper(lambda: TritonFlashAttentionAutogradFunction.apply(Q_flat, K_flat, V_flat, is_causal), direction, Q, K, V)
+        ms = test_wrapper(lambda: TritonFlashAttentionAutogradFunction.apply(Q, K, V, is_causal), direction, Q, K, V)
     if attention_function == "FA_torch":
         ms = test_wrapper(lambda: nn_sdpa(Q, K, V, is_causal=is_causal), direction, Q, K, V)
     if attention_function == "Torch.compile":
@@ -980,10 +1087,11 @@ def test_wrapper(func, direction, Q, K, V):
 
 
 def test_timing_flash_forward_backward():
-    n_heads = 16*128
+    batch = 128
+    n_heads = 16
     d_head = 64
     sequence_length = 512
-    q, k, v = torch.randn(3, n_heads, sequence_length, d_head, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+    q, k, v = torch.randn(3, batch, n_heads, sequence_length, d_head, device="cuda", dtype=torch.bfloat16, requires_grad=True)
 
     flash = torch.compile(TritonFlashAttentionAutogradFunction.apply)
 
@@ -997,7 +1105,7 @@ def test_timing_flash_forward_backward():
 
 
 if __name__ == "__main__":
-    benchmark_attention.run(show_plots=True, print_data=True)
+    benchmark_attention.run(show_plots=False, print_data=True)
 
     test_timing_flash_forward_backward() # 
-    print("should give 3.40 roughly")
+    print("should give 3.14 roughly")

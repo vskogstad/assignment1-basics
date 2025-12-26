@@ -632,7 +632,7 @@ def create_sliding_window_mask(seq_len: int, window_size: int, device, dtype):
     mask = torch.tril(mask)
     return mask
 
-@torch._dynamo.disable
+
 class GatedAttention(nn.Module):
     def __init__(
         self,
@@ -767,34 +767,9 @@ class GatedAttention(nn.Module):
             Q = self.rope(Q, token_positions).to(V.dtype)
             K = self.rope(K, token_positions).to(V.dtype)
         
-        # 1. Triton kernel custom:
-        """def _ptr(t): 
-            return hex(t.untyped_storage().data_ptr())
-
-        def _dbg(name, t):
-            print(f"{name}: shape={tuple(t.shape)} stride={t.stride()} contig={t.is_contiguous()} ptr={_ptr(t)}")
-
-        # right before apply(...)
-        _dbg("Q_in", Q)
-        _dbg("K_in", K)
-        _dbg("V_in", V)"""
-
-        #out = TritonFlashAttentionAutogradFunction.apply(Q, K, V, True)
-
-        #_dbg("O_out", out)
-        
-        #mha = rearrange(mha, "(b head )s d_v -> b s (head d_v)", head=h)
-        #print(f"Triton: shape={mha.shape}, strides={mha.stride()}, contig={mha.is_contiguous()}")
-        # 2. torch.nn flash attention
-        from torch.nn.functional import scaled_dot_product_attention as FA_torch
-        out = FA_torch(Q, K, V, is_causal=True)       
-        
-        # 3. torch.compile()
-        #mha = scaled_dot_product_attention(Q, K, V, mask=attn_mask)
-
-        
+ 
+        out = _attn_impl(Q, K, V, is_causal=True)
         mha = rearrange(out, "b head s d_v -> b s (head d_v)")
-        #print(f"FA: shape={mha.shape}, strides={mha.stride()}, contig={mha.is_contiguous()}")
 
         # SwiGLU(x) = W2(SiLU(xW1) ⊙ xW3)
         x1 = self.w1(x)
@@ -804,8 +779,16 @@ class GatedAttention(nn.Module):
         # project by to normal dimensions
         return self.Wo(hidden)
 
+#@torch._dynamo.disable
+def _attn_impl(Q, K, V, is_causal):
+    # 1. Triton kernel custom:
+    out = TritonFlashAttentionAutogradFunction.apply(Q, K, V, True)
 
+    # 2. torch.nn flash attention
+    #from torch.nn.functional import scaled_dot_product_attention as FA_torch
+    #out = FA_torch(Q, K, V, is_causal=True)
 
+    return out
 
 class GroupedQueryAttention(nn.Module):
     """

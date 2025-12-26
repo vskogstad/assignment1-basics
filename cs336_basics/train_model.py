@@ -44,6 +44,7 @@ def train(cfg: Config):
 
     torch.set_float32_matmul_precision("high")  # Improved speed
     # torch.autograd.set_detect_anomaly(True) # for bughunting
+    # torch._logging.set_logs(graph_breaks=True) # for graph-breaks
 
     if torch.cuda.is_available():
         # Clear GPU cache between runs
