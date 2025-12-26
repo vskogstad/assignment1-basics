@@ -49,7 +49,7 @@ def flash_precompute_d(
         O_ptr + batch_index * stride_ob + head_index * stride_oh,
         shape=(N_QUERIES, d),
         strides=(stride_oq, stride_od),
-        offsets=(0, 0),
+        offsets=(query_tile_index*D_BLOCK_SIZE, 0),
         block_shape=(D_BLOCK_SIZE, d),
         order=(1, 0),
     )
@@ -58,7 +58,7 @@ def flash_precompute_d(
         dO_ptr + batch_index * stride_dob + head_index * stride_doh,
         shape=(N_QUERIES, d),
         strides=(stride_doq, stride_dod),
-        offsets=(0, 0),
+        offsets=(query_tile_index*D_BLOCK_SIZE, 0),
         block_shape=(D_BLOCK_SIZE, d),
         order=(1, 0),
     )
@@ -68,7 +68,7 @@ def flash_precompute_d(
         D_ptr + batch_index * stride_db + head_index * stride_dh,
         shape=(N_QUERIES,),
         strides=(stride_dq,),
-        offsets=(0,),
+        offsets=(query_tile_index*D_BLOCK_SIZE,),
         block_shape=(D_BLOCK_SIZE,),
         order=(0,),
     )
@@ -808,7 +808,7 @@ class TritonFlashAttentionAutogradFunction(torch.autograd.Function):
 
 
         # D-kernel
-        D_BLOCK_SIZE = 512
+        D_BLOCK_SIZE = 64
         Td = N_QUERIES // D_BLOCK_SIZE
         grid = (Td, b*h)
         flash_precompute_d[grid](
