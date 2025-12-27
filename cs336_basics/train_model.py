@@ -145,7 +145,7 @@ def train(cfg: Config):
                 x = x_s[mini_step]
                 y = y_s[mini_step]
                 with torch.autocast(device_type="cuda", dtype=cfg.dtype):
-                    y_pred = model(x)
+                    y_pred = model(x, seq_windows)
                     loss = loss_func(pred=y_pred, targets=y)/cfg.grad_accum_steps
                     loss_accum += loss.detach()
                     loss.backward()

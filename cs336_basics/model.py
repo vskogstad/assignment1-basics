@@ -769,7 +769,7 @@ class GatedAttention(nn.Module):
         
  
         out = _attn_impl(Q, K, V, is_causal=True)
-        mha = rearrange(out, "b head s d_v -> b s (head d_v)")
+        mha = out.permute(0, 2, 1, 3).reshape(B, S, H * Dv)
 
         # SwiGLU(x) = W2(SiLU(xW1) ⊙ xW3)
         x1 = self.w1(x)

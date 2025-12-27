@@ -2,7 +2,7 @@
 model_name: "transformer"
 vocab_size: 32000 # 32768
 num_layers: 12
-num_heads: 16
+num_heads: 8
 d_model: 1024
 d_ff: 4096
 context_length: 512
@@ -21,13 +21,13 @@ tokenizer_merges_path: "data/tokenizer_data/merges_owt_train.pkl"
 
 # Training configuration
 dtype: "bfloat16"
-batch_size: 128
+batch_size: 256
 min_learning_rate: 1.0e-4
 max_learning_rate: 0.0050
 weight_decay: 0.1
 warmup_steps: 600
-total_steps: 15800
-cosine_cycle_steps: 15800
+total_steps: 8900
+cosine_cycle_steps: 8900
 steady_steps: 7000
 betas: [0.9, 0.999]
 eps: 1.0e-8
@@ -36,7 +36,7 @@ grad_clip_norm: 1.0
 optimizer: "normuon"
 scheduler: "cosine"
 compile_model: true
-grad_accum_steps: 1
+grad_accum_steps: 2
 sky_ladder: false
 sky_ladder_alpha: 0.05
 sky_ladder_min_window: 8
